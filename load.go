@@ -21,19 +21,60 @@ type Case struct {
 	Steps []Step
 }
 
-// Step is one action. Name is empty when the file omits it.
+// Step is one action, assertion, or AI step. Name is empty when the file omits it.
 // A tap stores its locator in Locator. Every other action leaves Locator zero
-// and sets the field for that action.
+// and sets the field for that action. An assertion sets Precondition or Expect.
+// An AI step sets AI.
 type Step struct {
-	Name      string
+	Name         string
+	Locator      Locator
+	Launch       *Launch
+	LongPress    *LongPress
+	TapAt        *TapAt
+	Swipe        *Swipe
+	Type         *Type
+	Key          *Key
+	Wait         *Wait
+	Precondition *Assertion
+	Expect       *Assertion
+	AI           *AI
+}
+
+// AI is one AI step. Goal is the outcome to reach on the device.
+// MaxSteps is 20 when the file omits it.
+type AI struct {
+	Goal     string
+	MaxSteps int
+}
+
+// Assertion is the body of a precondition or expect step.
+// Timeout is 10s when the file omits it. Exactly one check is set.
+type Assertion struct {
+	Timeout      time.Duration
+	Exists       *Locator
+	Absent       *Locator
+	TextEquals   *TextCheck
+	TextContains *TextCheck
+	AttrEquals   *AttrEquals
+	ScreenText   *ScreenText
+}
+
+// ScreenText is text read from the pixels of the screen. It has no locator.
+type ScreenText struct {
+	Text string
+}
+
+// AttrEquals compares an element's enabled or checked attribute with Value.
+type AttrEquals struct {
 	Locator   Locator
-	Launch    *Launch
-	LongPress *LongPress
-	TapAt     *TapAt
-	Swipe     *Swipe
-	Type      *Type
-	Key       *Key
-	Wait      *Wait
+	Attribute string
+	Value     bool
+}
+
+// TextCheck compares an element's display text with Text.
+type TextCheck struct {
+	Locator Locator
+	Text    string
 }
 
 // Launch starts an application. Entry is empty when the file omits it.
@@ -231,7 +272,7 @@ func decodeStep(path string, node *yaml.Node) (Step, error) {
 				return Step{}, err
 			}
 			step.Name = decoded
-		case "tap", "launch", "long_press", "tap_at", "swipe", "type", "key", "wait":
+		case "tap", "launch", "long_press", "tap_at", "swipe", "type", "key", "wait", "precondition", "expect", "ai":
 			if action != "" {
 				return Step{}, reject(path, key, "step has more than one action")
 			}
@@ -291,10 +332,324 @@ func decodeStep(path string, node *yaml.Node) (Step, error) {
 			return Step{}, err
 		}
 		step.Wait = &pause
+	case "precondition":
+		assertion, err := decodeAssertion(path, action, actionKey, actionVal)
+		if err != nil {
+			return Step{}, err
+		}
+		step.Precondition = &assertion
+	case "expect":
+		assertion, err := decodeAssertion(path, action, actionKey, actionVal)
+		if err != nil {
+			return Step{}, err
+		}
+		step.Expect = &assertion
+	case "ai":
+		ai, err := decodeAI(path, actionKey, actionVal)
+		if err != nil {
+			return Step{}, err
+		}
+		step.AI = &ai
 	default:
 		return Step{}, reject(path, node, "missing tap")
 	}
 	return step, nil
+}
+
+func decodeAI(path string, key, node *yaml.Node) (AI, error) {
+	if node.Kind != yaml.MappingNode {
+		return AI{}, reject(path, node, "ai must be a mapping")
+	}
+	var (
+		ai      AI
+		hasGoal bool
+		hasMax  bool
+	)
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		field := node.Content[i]
+		val := node.Content[i+1]
+		if err := noteKey(path, seen, field); err != nil {
+			return AI{}, err
+		}
+		switch field.Value {
+		case "goal":
+			decoded, err := decodeString(path, field, val)
+			if err != nil {
+				return AI{}, err
+			}
+			ai.Goal = decoded
+			hasGoal = true
+		case "max_steps":
+			decoded, err := decodeMaxSteps(path, val)
+			if err != nil {
+				return AI{}, err
+			}
+			ai.MaxSteps = decoded
+			hasMax = true
+		default:
+			return AI{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+		}
+	}
+	if !hasGoal {
+		return AI{}, reject(path, key, "missing goal")
+	}
+	if !hasMax {
+		ai.MaxSteps = 20
+	}
+	return ai, nil
+}
+
+func decodeMaxSteps(path string, node *yaml.Node) (int, error) {
+	if node.Tag != "!!int" {
+		return 0, reject(path, node, `field "max_steps" must be a positive integer`)
+	}
+	n, err := strconv.Atoi(node.Value)
+	if err != nil || n < 1 {
+		return 0, reject(path, node, `field "max_steps" must be a positive integer`)
+	}
+	return n, nil
+}
+
+func decodeAssertion(path, kind string, key, node *yaml.Node) (Assertion, error) {
+	if node.Kind != yaml.MappingNode {
+		return Assertion{}, reject(path, node, kind+" must be a mapping")
+	}
+	var (
+		assertion  Assertion
+		hasTimeout bool
+		hasCheck   bool
+	)
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		field := node.Content[i]
+		val := node.Content[i+1]
+		if err := noteKey(path, seen, field); err != nil {
+			return Assertion{}, err
+		}
+		switch field.Value {
+		case "timeout":
+			decoded, err := decodeDuration(path, val)
+			if err != nil {
+				return Assertion{}, err
+			}
+			assertion.Timeout = decoded
+			hasTimeout = true
+		case "exists":
+			if err := noteCheck(path, &hasCheck, field); err != nil {
+				return Assertion{}, err
+			}
+			locator, err := decodeLocator(path, field, val)
+			if err != nil {
+				return Assertion{}, err
+			}
+			assertion.Exists = &locator
+		case "absent":
+			if err := noteCheck(path, &hasCheck, field); err != nil {
+				return Assertion{}, err
+			}
+			locator, err := decodeLocator(path, field, val)
+			if err != nil {
+				return Assertion{}, err
+			}
+			assertion.Absent = &locator
+		case "text_equals":
+			if err := noteCheck(path, &hasCheck, field); err != nil {
+				return Assertion{}, err
+			}
+			check, err := decodeTextCheck(path, field.Value, field, val)
+			if err != nil {
+				return Assertion{}, err
+			}
+			assertion.TextEquals = &check
+		case "text_contains":
+			if err := noteCheck(path, &hasCheck, field); err != nil {
+				return Assertion{}, err
+			}
+			check, err := decodeTextCheck(path, field.Value, field, val)
+			if err != nil {
+				return Assertion{}, err
+			}
+			assertion.TextContains = &check
+		case "attr_equals":
+			if err := noteCheck(path, &hasCheck, field); err != nil {
+				return Assertion{}, err
+			}
+			check, err := decodeAttrEquals(path, field, val)
+			if err != nil {
+				return Assertion{}, err
+			}
+			assertion.AttrEquals = &check
+		case "screen_text":
+			if err := noteCheck(path, &hasCheck, field); err != nil {
+				return Assertion{}, err
+			}
+			check, err := decodeScreenText(path, field, val)
+			if err != nil {
+				return Assertion{}, err
+			}
+			assertion.ScreenText = &check
+		default:
+			return Assertion{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+		}
+	}
+	if !hasTimeout {
+		assertion.Timeout = 10 * time.Second
+	}
+	if !hasCheck {
+		return Assertion{}, reject(path, key, "missing check")
+	}
+	return assertion, nil
+}
+
+func decodeScreenText(path string, key, node *yaml.Node) (ScreenText, error) {
+	if node.Kind != yaml.MappingNode {
+		return ScreenText{}, reject(path, node, "screen_text must be a mapping")
+	}
+	var (
+		check   ScreenText
+		hasText bool
+	)
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		field := node.Content[i]
+		val := node.Content[i+1]
+		if err := noteKey(path, seen, field); err != nil {
+			return ScreenText{}, err
+		}
+		switch field.Value {
+		case "text":
+			decoded, err := decodeString(path, field, val)
+			if err != nil {
+				return ScreenText{}, err
+			}
+			check.Text = decoded
+			hasText = true
+		default:
+			return ScreenText{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+		}
+	}
+	if !hasText {
+		return ScreenText{}, reject(path, key, "missing text")
+	}
+	return check, nil
+}
+
+func decodeAttrEquals(path string, key, node *yaml.Node) (AttrEquals, error) {
+	if node.Kind != yaml.MappingNode {
+		return AttrEquals{}, reject(path, node, "attr_equals must be a mapping")
+	}
+	var (
+		check      AttrEquals
+		locator    *yaml.Node
+		locatorKey *yaml.Node
+		hasAttr    bool
+		hasValue   bool
+	)
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		field := node.Content[i]
+		val := node.Content[i+1]
+		if err := noteKey(path, seen, field); err != nil {
+			return AttrEquals{}, err
+		}
+		switch field.Value {
+		case "locator":
+			locator = val
+			locatorKey = field
+		case "attribute":
+			decoded, err := decodeString(path, field, val)
+			if err != nil {
+				return AttrEquals{}, err
+			}
+			if decoded != "enabled" && decoded != "checked" {
+				return AttrEquals{}, reject(path, val, fmt.Sprintf("unknown attribute %q", decoded))
+			}
+			check.Attribute = decoded
+			hasAttr = true
+		case "value":
+			decoded, err := decodeBool(path, field, val)
+			if err != nil {
+				return AttrEquals{}, err
+			}
+			check.Value = decoded
+			hasValue = true
+		default:
+			return AttrEquals{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+		}
+	}
+	if locator == nil {
+		return AttrEquals{}, reject(path, key, "missing locator")
+	}
+	if !hasAttr {
+		return AttrEquals{}, reject(path, key, "missing attribute")
+	}
+	if !hasValue {
+		return AttrEquals{}, reject(path, key, "missing value")
+	}
+	decoded, err := decodeLocator(path, locatorKey, locator)
+	if err != nil {
+		return AttrEquals{}, err
+	}
+	check.Locator = decoded
+	return check, nil
+}
+
+func decodeBool(path string, key, val *yaml.Node) (bool, error) {
+	if val.Tag != "!!bool" {
+		return false, reject(path, val, fmt.Sprintf("field %q must be a boolean", key.Value))
+	}
+	decoded, err := strconv.ParseBool(val.Value)
+	if err != nil {
+		return false, reject(path, val, fmt.Sprintf("field %q must be a boolean", key.Value))
+	}
+	return decoded, nil
+}
+
+func decodeTextCheck(path, kind string, key, node *yaml.Node) (TextCheck, error) {
+	if node.Kind != yaml.MappingNode {
+		return TextCheck{}, reject(path, node, kind+" must be a mapping")
+	}
+	var (
+		check      TextCheck
+		locator    *yaml.Node
+		locatorKey *yaml.Node
+		hasText    bool
+	)
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		field := node.Content[i]
+		val := node.Content[i+1]
+		if err := noteKey(path, seen, field); err != nil {
+			return TextCheck{}, err
+		}
+		switch field.Value {
+		case "locator":
+			locator = val
+			locatorKey = field
+		case "text":
+			decoded, err := decodeString(path, field, val)
+			if err != nil {
+				return TextCheck{}, err
+			}
+			check.Text = decoded
+			hasText = true
+		default:
+			return TextCheck{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+		}
+	}
+	if locator == nil {
+		return TextCheck{}, reject(path, key, "missing locator")
+	}
+	if !hasText {
+		return TextCheck{}, reject(path, key, "missing text")
+	}
+	decoded, err := decodeLocator(path, locatorKey, locator)
+	if err != nil {
+		return TextCheck{}, err
+	}
+	check.Locator = decoded
+	return check, nil
 }
 
 func decodeLaunch(path string, key, node *yaml.Node) (Launch, error) {
@@ -725,6 +1080,14 @@ func decodeString(path string, key, val *yaml.Node) (string, error) {
 		return "", reject(path, val, fmt.Sprintf("field %q must be a string", key.Value))
 	}
 	return val.Value, nil
+}
+
+func noteCheck(path string, set *bool, key *yaml.Node) error {
+	if *set {
+		return reject(path, key, "assertion has more than one check")
+	}
+	*set = true
+	return nil
 }
 
 func noteKey(path string, seen map[string]bool, key *yaml.Node) error {

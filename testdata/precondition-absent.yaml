@@ -1,0 +1,8 @@
+name: Gone
+steps:
+  - name: Dialog closed
+    precondition:
+      timeout: 1s
+      absent:
+        id: dialog
+        text: Saving

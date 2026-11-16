@@ -1,0 +1,4 @@
+name: Ready
+steps:
+  - precondition:
+      timeout: 1s

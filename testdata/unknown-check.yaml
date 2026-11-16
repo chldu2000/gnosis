@@ -1,0 +1,5 @@
+name: Ready
+steps:
+  - precondition:
+      visible:
+        id: login

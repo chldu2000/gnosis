@@ -1,0 +1,8 @@
+name: Flags
+steps:
+  - expect:
+      attr_equals:
+        locator:
+          id: box
+        attribute: enabled
+        value: "true"

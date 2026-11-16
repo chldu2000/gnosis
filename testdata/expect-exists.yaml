@@ -1,0 +1,8 @@
+name: Signed in
+steps:
+  - name: Welcome is there
+    expect:
+      timeout: 2s
+      exists:
+        description: Welcome
+        type: TextView

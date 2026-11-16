@@ -1,0 +1,10 @@
+name: Title
+steps:
+  - name: Heading
+    expect:
+      timeout: 3s
+      text_equals:
+        locator:
+          id: title
+          index: 2
+        text: Welcome

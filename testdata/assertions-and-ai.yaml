@@ -1,0 +1,41 @@
+name: Sign in
+steps:
+  - name: Open
+    launch:
+      app: com.example.mail
+  - name: Login is there
+    precondition:
+      exists:
+        id: login
+        text: Sign in
+  - tap:
+      locator:
+        id: login
+  - expect:
+      timeout: 2s
+      text_equals:
+        locator:
+          id: title
+        text: Welcome
+  - precondition:
+      timeout: 0s
+      absent:
+        id: spinner
+  - expect:
+      text_contains:
+        locator:
+          description: Hint
+        text: saved
+  - precondition:
+      attr_equals:
+        locator:
+          id: agree
+        attribute: checked
+        value: true
+  - expect:
+      screen_text:
+        text: Done
+  - name: Finish
+    ai:
+      goal: Return to the inbox
+      max_steps: 4

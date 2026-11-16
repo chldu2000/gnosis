@@ -1,0 +1,7 @@
+name: Banner
+steps:
+  - name: Headline
+    expect:
+      timeout: 8s
+      screen_text:
+        text: Sign in

@@ -1,0 +1,5 @@
+name: Ready
+steps:
+  - precondition:
+      exists:
+        id: login

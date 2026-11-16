@@ -1,0 +1,9 @@
+name: Ready
+steps:
+  - name: Login is there
+    precondition:
+      timeout: 5s
+      exists:
+        id: login
+        text: Sign in
+        index: 1

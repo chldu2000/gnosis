@@ -1,0 +1,5 @@
+name: Ask
+steps:
+  - ai:
+      goal: Open settings
+      max_steps: -1

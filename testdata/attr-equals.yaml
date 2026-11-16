@@ -1,0 +1,17 @@
+name: Flags
+steps:
+  - name: Button is on
+    expect:
+      timeout: 4s
+      attr_equals:
+        locator:
+          id: send
+          type: Button
+        attribute: enabled
+        value: true
+  - precondition:
+      attr_equals:
+        locator:
+          description: Agree
+        attribute: checked
+        value: false

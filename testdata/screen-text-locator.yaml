@@ -1,0 +1,7 @@
+name: Banner
+steps:
+  - expect:
+      screen_text:
+        text: Hi
+        locator:
+          id: title

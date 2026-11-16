@@ -1,0 +1,6 @@
+name: Title
+steps:
+  - expect:
+      text_equals:
+        locator:
+          id: title

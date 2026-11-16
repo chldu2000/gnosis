@@ -1,0 +1,6 @@
+name: Ask
+steps:
+  - name: Open settings
+    ai:
+      goal: Open the settings screen
+      max_steps: 8

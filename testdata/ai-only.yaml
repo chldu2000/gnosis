@@ -1,0 +1,8 @@
+name: Ask
+steps:
+  - name: Settings
+    ai:
+      goal: Open settings
+  - ai:
+      goal: Turn on wifi
+      max_steps: 3

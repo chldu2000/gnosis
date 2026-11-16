@@ -1,0 +1,6 @@
+name: Ready
+steps:
+  - precondition:
+      timeout: 10 s
+      exists:
+        id: login

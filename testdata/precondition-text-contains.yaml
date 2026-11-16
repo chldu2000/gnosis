@@ -1,0 +1,9 @@
+name: Hint
+steps:
+  - precondition:
+      timeout: 1500ms
+      text_contains:
+        locator:
+          description: Status
+          type: TextView
+        text: saved

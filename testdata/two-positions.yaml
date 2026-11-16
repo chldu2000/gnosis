@@ -1,0 +1,8 @@
+name: Both
+steps:
+  - precondition:
+      exists:
+        id: login
+    expect:
+      exists:
+        id: welcome

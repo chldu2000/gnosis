@@ -1,0 +1,7 @@
+name: Both
+steps:
+  - precondition:
+      exists:
+        id: login
+      absent:
+        id: dialog

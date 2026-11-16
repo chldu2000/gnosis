@@ -1,0 +1,4 @@
+name: Ready
+steps:
+  - exists:
+      id: login
