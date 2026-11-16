@@ -15,7 +15,7 @@ import (
 func TestLoad_launchAppAndEntryMatchTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "launch.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestLoad_launchAppAndEntryMatchTheFile(t *testing.T) {
 func TestLoad_rejectsLaunchWithoutApp(t *testing.T) {
 	path := filepath.Join("testdata", "launch-missing-app.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -58,7 +58,7 @@ func TestLoad_rejectsLaunchWithoutApp(t *testing.T) {
 func TestLoad_omittedLaunchEntryStaysEmpty(t *testing.T) {
 	path := filepath.Join("testdata", "launch-omitted-entry.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestLoad_omittedLaunchEntryStaysEmpty(t *testing.T) {
 func TestLoad_rejectsLaunchAppThatIsNotAString(t *testing.T) {
 	path := filepath.Join("testdata", "launch-app-wrong-type.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -97,7 +97,7 @@ func TestLoad_rejectsLaunchAppThatIsNotAString(t *testing.T) {
 func TestLoad_rejectsUnknownFieldOnLaunch(t *testing.T) {
 	path := filepath.Join("testdata", "launch-unknown-field.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -117,7 +117,7 @@ func TestLoad_rejectsUnknownFieldOnLaunch(t *testing.T) {
 func TestLoad_rejectsLaunchThatIsNotAMapping(t *testing.T) {
 	path := filepath.Join("testdata", "launch-not-a-mapping.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -137,7 +137,7 @@ func TestLoad_rejectsLaunchThatIsNotAMapping(t *testing.T) {
 func TestLoad_keepsAnEmptyLaunchApp(t *testing.T) {
 	path := filepath.Join("testdata", "launch-empty-app.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestLoad_keepsAnEmptyLaunchApp(t *testing.T) {
 func TestLoad_rejectsStepWithTwoActions(t *testing.T) {
 	path := filepath.Join("testdata", "two-actions.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -175,7 +175,7 @@ func TestLoad_rejectsStepWithTwoActions(t *testing.T) {
 func TestLoad_longPressLocatorAndDurationMatchTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "long-press.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestLoad_longPressLocatorAndDurationMatchTheFile(t *testing.T) {
 func TestLoad_omittedLongPressDurationIs800ms(t *testing.T) {
 	path := filepath.Join("testdata", "long-press-default.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestLoad_omittedLongPressDurationIs800ms(t *testing.T) {
 func TestLoad_writtenZeroLongPressDurationStaysZero(t *testing.T) {
 	path := filepath.Join("testdata", "long-press-zero.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestLoad_rejectsBadLongPressDurations(t *testing.T) {
 		t.Run(test.file, func(t *testing.T) {
 			path := filepath.Join("testdata", test.file)
 
-			_, err := gnosis.Load(path)
+			_, _, err := gnosis.Load(path)
 
 			var got *gnosis.Rejection
 			if !errors.As(err, &got) {
@@ -282,7 +282,7 @@ func TestLoad_rejectsBadLongPressDurations(t *testing.T) {
 func TestLoad_rejectsLongPressWithoutLocator(t *testing.T) {
 	path := filepath.Join("testdata", "long-press-missing-locator.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -302,7 +302,7 @@ func TestLoad_rejectsLongPressWithoutLocator(t *testing.T) {
 func TestLoad_rejectsLongPressIndexBelowOne(t *testing.T) {
 	path := filepath.Join("testdata", "long-press-index-zero.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -322,7 +322,7 @@ func TestLoad_rejectsLongPressIndexBelowOne(t *testing.T) {
 func TestLoad_tapAtRatiosMatchTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "tap-at.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestLoad_tapAtRatiosMatchTheFile(t *testing.T) {
 func TestLoad_swipeRatiosAndDurationMatchTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "swipe.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -383,7 +383,7 @@ func TestLoad_swipeRatiosAndDurationMatchTheFile(t *testing.T) {
 func TestLoad_writtenZeroSwipeDurationStaysZero(t *testing.T) {
 	path := filepath.Join("testdata", "swipe-zero.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -395,7 +395,7 @@ func TestLoad_writtenZeroSwipeDurationStaysZero(t *testing.T) {
 func TestLoad_omittedSwipeDurationIs300ms(t *testing.T) {
 	path := filepath.Join("testdata", "swipe-default.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -420,7 +420,7 @@ func TestLoad_omittedSwipeDurationIs300ms(t *testing.T) {
 func TestLoad_typeTextMatchesTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "type.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -443,7 +443,7 @@ func TestLoad_typeTextMatchesTheFile(t *testing.T) {
 func TestLoad_keyNamesMatchTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "key.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -466,7 +466,7 @@ func TestLoad_keyNamesMatchTheFile(t *testing.T) {
 func TestLoad_rejectsUnknownKeyName(t *testing.T) {
 	path := filepath.Join("testdata", "key-unknown.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -486,7 +486,7 @@ func TestLoad_rejectsUnknownKeyName(t *testing.T) {
 func TestLoad_rejectsKeyWithoutName(t *testing.T) {
 	path := filepath.Join("testdata", "key-missing-name.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -506,7 +506,7 @@ func TestLoad_rejectsKeyWithoutName(t *testing.T) {
 func TestLoad_waitDurationMatchesTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "wait.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -529,7 +529,7 @@ func TestLoad_waitDurationMatchesTheFile(t *testing.T) {
 func TestLoad_rejectsWaitWithoutDuration(t *testing.T) {
 	path := filepath.Join("testdata", "wait-missing-duration.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -549,7 +549,7 @@ func TestLoad_rejectsWaitWithoutDuration(t *testing.T) {
 func TestLoad_rejectsBadWaitDuration(t *testing.T) {
 	path := filepath.Join("testdata", "wait-duration-decimal.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -569,7 +569,7 @@ func TestLoad_rejectsBadWaitDuration(t *testing.T) {
 func TestLoad_rejectsUnknownActionKindAtItsPosition(t *testing.T) {
 	path := filepath.Join("testdata", "unknown-action.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -589,7 +589,7 @@ func TestLoad_rejectsUnknownActionKindAtItsPosition(t *testing.T) {
 func TestLoad_actionsKeepFileOrderDefaultsAndOutOfRangeRatios(t *testing.T) {
 	path := filepath.Join("testdata", "actions.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -642,7 +642,7 @@ func TestLoad_doesNotModifyActionFiles(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)
 		}
-		_, _ = gnosis.Load(path)
+		_, _, _ = gnosis.Load(path)
 		after, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)
@@ -656,7 +656,7 @@ func TestLoad_doesNotModifyActionFiles(t *testing.T) {
 func TestLoad_rejectsTapAtWithoutY(t *testing.T) {
 	path := filepath.Join("testdata", "tap-at-missing-y.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -676,7 +676,7 @@ func TestLoad_rejectsTapAtWithoutY(t *testing.T) {
 func TestLoad_rejectsTapAtXThatIsNotANumber(t *testing.T) {
 	path := filepath.Join("testdata", "tap-at-x-string.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -696,7 +696,7 @@ func TestLoad_rejectsTapAtXThatIsNotANumber(t *testing.T) {
 func TestLoad_rejectsSwipeWithoutToY(t *testing.T) {
 	path := filepath.Join("testdata", "swipe-missing-to-y.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -716,7 +716,7 @@ func TestLoad_rejectsSwipeWithoutToY(t *testing.T) {
 func TestLoad_rejectsSwipeDurationWithASpace(t *testing.T) {
 	path := filepath.Join("testdata", "swipe-duration-space.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -736,7 +736,7 @@ func TestLoad_rejectsSwipeDurationWithASpace(t *testing.T) {
 func TestLoad_rejectsTypeWithoutText(t *testing.T) {
 	path := filepath.Join("testdata", "type-missing-text.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {

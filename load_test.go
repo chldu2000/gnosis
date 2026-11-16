@@ -14,7 +14,7 @@ import (
 func TestLoad_caseNameStepOrderAndLocatorMatchTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "sign-in.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestLoad_caseNameStepOrderAndLocatorMatchTheFile(t *testing.T) {
 func TestLoad_omittedCaseNameUsesFilenameWithoutLastExtension(t *testing.T) {
 	path := filepath.Join("testdata", "sign-in.case.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestLoad_twoFilesCanUseTheSameCaseName(t *testing.T) {
 		filepath.Join("testdata", "shared-name", "b", "login.yaml"),
 	}
 	for _, path := range paths {
-		got, err := gnosis.Load(path)
+		got, _, err := gnosis.Load(path)
 		if err != nil {
 			t.Fatalf("Load(%q): %v", path, err)
 		}
@@ -77,7 +77,7 @@ func TestLoad_caseWithNoSteps(t *testing.T) {
 		filepath.Join("testdata", "omitted-steps.yaml"),
 	}
 	for _, path := range paths {
-		got, err := gnosis.Load(path)
+		got, _, err := gnosis.Load(path)
 		if err != nil {
 			t.Fatalf("Load(%q): %v", path, err)
 		}
@@ -90,7 +90,7 @@ func TestLoad_caseWithNoSteps(t *testing.T) {
 func TestLoad_rejectsUnknownFieldAtItsPosition(t *testing.T) {
 	path := filepath.Join("testdata", "unknown-field.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -110,7 +110,7 @@ func TestLoad_rejectsUnknownFieldAtItsPosition(t *testing.T) {
 func TestLoad_rejectsTapWithoutLocator(t *testing.T) {
 	path := filepath.Join("testdata", "missing-locator.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -130,7 +130,7 @@ func TestLoad_rejectsTapWithoutLocator(t *testing.T) {
 func TestLoad_rejectsWrongTypeAtItsPosition(t *testing.T) {
 	path := filepath.Join("testdata", "wrong-type.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -150,7 +150,7 @@ func TestLoad_rejectsWrongTypeAtItsPosition(t *testing.T) {
 func TestLoad_rejectsIndexThatIsNotAnInteger(t *testing.T) {
 	path := filepath.Join("testdata", "index-wrong-type.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -170,7 +170,7 @@ func TestLoad_rejectsIndexThatIsNotAnInteger(t *testing.T) {
 func TestLoad_rejectsDuplicateKeyAtItsPosition(t *testing.T) {
 	path := filepath.Join("testdata", "duplicate-key.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -190,7 +190,7 @@ func TestLoad_rejectsDuplicateKeyAtItsPosition(t *testing.T) {
 func TestLoad_rejectsLocatorThatOnlyHasIndex(t *testing.T) {
 	path := filepath.Join("testdata", "index-only.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -210,7 +210,7 @@ func TestLoad_rejectsLocatorThatOnlyHasIndex(t *testing.T) {
 func TestLoad_rejectsIndexBelowOne(t *testing.T) {
 	path := filepath.Join("testdata", "index-zero.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -230,7 +230,7 @@ func TestLoad_rejectsIndexBelowOne(t *testing.T) {
 func TestLoad_rejectsStepWithoutTap(t *testing.T) {
 	path := filepath.Join("testdata", "missing-tap.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -250,7 +250,7 @@ func TestLoad_rejectsStepWithoutTap(t *testing.T) {
 func TestLoad_rejectsInvalidUTF8AtItsPosition(t *testing.T) {
 	path := filepath.Join("testdata", "bad-utf8.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -270,7 +270,7 @@ func TestLoad_rejectsInvalidUTF8AtItsPosition(t *testing.T) {
 func TestLoad_rejectsNegativeIndex(t *testing.T) {
 	path := filepath.Join("testdata", "index-negative.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -290,7 +290,7 @@ func TestLoad_rejectsNegativeIndex(t *testing.T) {
 func TestLoad_keepsAnEmptyCaseName(t *testing.T) {
 	path := filepath.Join("testdata", "empty-name.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestLoad_keepsAnEmptyCaseName(t *testing.T) {
 func TestLoad_keepsAnEmptyLocatorID(t *testing.T) {
 	path := filepath.Join("testdata", "empty-id.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestLoad_keepsAnEmptyLocatorID(t *testing.T) {
 func TestLoad_rejectsStepsThatAreNotASequence(t *testing.T) {
 	path := filepath.Join("testdata", "steps-wrong-type.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -340,7 +340,7 @@ func TestLoad_rejectsStepsThatAreNotASequence(t *testing.T) {
 func TestLoad_rejectsCaseThatIsNotAMapping(t *testing.T) {
 	path := filepath.Join("testdata", "not-a-mapping.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -360,7 +360,7 @@ func TestLoad_rejectsCaseThatIsNotAMapping(t *testing.T) {
 func TestLoad_rejectsDuplicateLocatorKey(t *testing.T) {
 	path := filepath.Join("testdata", "duplicate-locator-key.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -388,7 +388,7 @@ func TestLoad_doesNotModifyTheFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)
 		}
-		_, _ = gnosis.Load(path)
+		_, _, _ = gnosis.Load(path)
 		after, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)
@@ -402,7 +402,7 @@ func TestLoad_doesNotModifyTheFile(t *testing.T) {
 func TestLoad_rejectsBrokenYAMLAtItsLine(t *testing.T) {
 	path := filepath.Join("testdata", "broken.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -422,7 +422,7 @@ func TestLoad_rejectsBrokenYAMLAtItsLine(t *testing.T) {
 func TestLoad_rejectsCommentOnlyFile(t *testing.T) {
 	path := filepath.Join("testdata", "comment-only.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -442,7 +442,7 @@ func TestLoad_rejectsCommentOnlyFile(t *testing.T) {
 func TestLoad_rejectsMissingFile(t *testing.T) {
 	path := filepath.Join("testdata", "missing-case.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -462,7 +462,7 @@ func TestLoad_rejectsMissingFile(t *testing.T) {
 func TestLoad_rejectsASecondDocument(t *testing.T) {
 	path := filepath.Join("testdata", "two-documents.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {

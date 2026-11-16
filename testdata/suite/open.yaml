@@ -1,0 +1,4 @@
+name: Open
+steps:
+  - launch:
+      app: demo.app

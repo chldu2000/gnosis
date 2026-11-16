@@ -15,7 +15,7 @@ import (
 func TestLoad_rejectsAssertionWithTwoChecks(t *testing.T) {
 	path := filepath.Join("testdata", "two-checks.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -35,7 +35,7 @@ func TestLoad_rejectsAssertionWithTwoChecks(t *testing.T) {
 func TestLoad_checksPositionsActionsAndAIKeepFileOrder(t *testing.T) {
 	path := filepath.Join("testdata", "assertions-and-ai.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestLoad_rejectsMaxStepsThatIsNotAPositiveInteger(t *testing.T) {
 		t.Run(file, func(t *testing.T) {
 			path := filepath.Join("testdata", file)
 
-			_, err := gnosis.Load(path)
+			_, _, err := gnosis.Load(path)
 
 			var got *gnosis.Rejection
 			if !errors.As(err, &got) {
@@ -145,7 +145,7 @@ func TestLoad_rejectsMaxStepsThatIsNotAPositiveInteger(t *testing.T) {
 func TestLoad_omittedMaxStepsIs20(t *testing.T) {
 	path := filepath.Join("testdata", "ai-default-max-steps.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestLoad_omittedMaxStepsIs20(t *testing.T) {
 func TestLoad_aiGoalAndMaxStepsMatchTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "ai-step.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestLoad_aiGoalAndMaxStepsMatchTheFile(t *testing.T) {
 func TestLoad_rejectsUnknownCheck(t *testing.T) {
 	path := filepath.Join("testdata", "unknown-check.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -210,7 +210,7 @@ func TestLoad_rejectsUnknownCheck(t *testing.T) {
 func TestLoad_rejectsAssertionWithoutPosition(t *testing.T) {
 	path := filepath.Join("testdata", "assertion-missing-position.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -230,7 +230,7 @@ func TestLoad_rejectsAssertionWithoutPosition(t *testing.T) {
 func TestLoad_rejectsStepWithTwoPositions(t *testing.T) {
 	path := filepath.Join("testdata", "two-positions.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -250,7 +250,7 @@ func TestLoad_rejectsStepWithTwoPositions(t *testing.T) {
 func TestLoad_rejectsAssertionWithoutACheck(t *testing.T) {
 	path := filepath.Join("testdata", "assertion-missing-check.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -270,7 +270,7 @@ func TestLoad_rejectsAssertionWithoutACheck(t *testing.T) {
 func TestLoad_expectScreenTextMatchesTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "expect-screen-text.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestLoad_expectScreenTextMatchesTheFile(t *testing.T) {
 func TestLoad_rejectsUnknownAttribute(t *testing.T) {
 	path := filepath.Join("testdata", "attr-unknown.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -313,7 +313,7 @@ func TestLoad_rejectsUnknownAttribute(t *testing.T) {
 func TestLoad_attrEqualsMatchesTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "attr-equals.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestLoad_attrEqualsMatchesTheFile(t *testing.T) {
 func TestLoad_preconditionTextContainsMatchesTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "precondition-text-contains.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestLoad_preconditionTextContainsMatchesTheFile(t *testing.T) {
 func TestLoad_expectTextEqualsMatchesTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "expect-text-equals.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -406,7 +406,7 @@ func TestLoad_expectTextEqualsMatchesTheFile(t *testing.T) {
 func TestLoad_preconditionAbsentMatchesTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "precondition-absent.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -432,7 +432,7 @@ func TestLoad_preconditionAbsentMatchesTheFile(t *testing.T) {
 func TestLoad_expectExistsMatchesTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "expect-exists.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -458,7 +458,7 @@ func TestLoad_expectExistsMatchesTheFile(t *testing.T) {
 func TestLoad_preconditionExistsMatchesTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "precondition-exists.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -485,7 +485,7 @@ func TestLoad_preconditionExistsMatchesTheFile(t *testing.T) {
 func TestLoad_rejectsAssertionTimeoutWithASpace(t *testing.T) {
 	path := filepath.Join("testdata", "precondition-timeout-space.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -505,7 +505,7 @@ func TestLoad_rejectsAssertionTimeoutWithASpace(t *testing.T) {
 func TestLoad_writtenZeroAssertionTimeoutStaysZero(t *testing.T) {
 	path := filepath.Join("testdata", "precondition-zero-timeout.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -517,7 +517,7 @@ func TestLoad_writtenZeroAssertionTimeoutStaysZero(t *testing.T) {
 func TestLoad_omittedAssertionTimeoutIs10s(t *testing.T) {
 	path := filepath.Join("testdata", "precondition-default-timeout.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -539,7 +539,7 @@ func TestLoad_omittedAssertionTimeoutIs10s(t *testing.T) {
 func TestLoad_caseWithOnlyAISteps(t *testing.T) {
 	path := filepath.Join("testdata", "ai-only.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -570,7 +570,7 @@ func TestLoad_caseWithOnlyAISteps(t *testing.T) {
 func TestLoad_keepsAnEmptyAIGoal(t *testing.T) {
 	path := filepath.Join("testdata", "ai-empty-goal.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -588,7 +588,7 @@ func TestLoad_keepsAnEmptyAIGoal(t *testing.T) {
 func TestLoad_keepsMaxStepsOfOne(t *testing.T) {
 	path := filepath.Join("testdata", "ai-max-steps-one.yaml")
 
-	got, err := gnosis.Load(path)
+	got, _, err := gnosis.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -600,7 +600,7 @@ func TestLoad_keepsMaxStepsOfOne(t *testing.T) {
 func TestLoad_rejectsAIWithoutGoal(t *testing.T) {
 	path := filepath.Join("testdata", "ai-missing-goal.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -620,7 +620,7 @@ func TestLoad_rejectsAIWithoutGoal(t *testing.T) {
 func TestLoad_rejectsTextEqualsWithoutText(t *testing.T) {
 	path := filepath.Join("testdata", "text-equals-missing-text.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -640,7 +640,7 @@ func TestLoad_rejectsTextEqualsWithoutText(t *testing.T) {
 func TestLoad_rejectsScreenTextWithALocator(t *testing.T) {
 	path := filepath.Join("testdata", "screen-text-locator.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -660,7 +660,7 @@ func TestLoad_rejectsScreenTextWithALocator(t *testing.T) {
 func TestLoad_rejectsAssertionIndexBelowOne(t *testing.T) {
 	path := filepath.Join("testdata", "exists-index-zero.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -680,7 +680,7 @@ func TestLoad_rejectsAssertionIndexBelowOne(t *testing.T) {
 func TestLoad_rejectsAttributeValueThatIsNotABoolean(t *testing.T) {
 	path := filepath.Join("testdata", "attr-value-string.yaml")
 
-	_, err := gnosis.Load(path)
+	_, _, err := gnosis.Load(path)
 
 	var got *gnosis.Rejection
 	if !errors.As(err, &got) {
@@ -712,7 +712,7 @@ func TestLoad_doesNotModifyAssertionOrAIFiles(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)
 		}
-		_, _ = gnosis.Load(path)
+		_, _, _ = gnosis.Load(path)
 		after, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)

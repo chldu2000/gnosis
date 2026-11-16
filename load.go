@@ -133,27 +133,47 @@ type Locator struct {
 	Index       int
 }
 
+// Suite is a loaded suite: cases in file order. A suite has no name.
+type Suite struct {
+	Cases []Case
+}
+
 // Rejection is a load failure. It names the file and the position that could not be read.
+// Reference is the 1-based suite entry when a referenced case failed. CaseFile, CaseLine,
+// and CaseColumn name that case. They are zero when the reference itself could not be read.
 type Rejection struct {
-	File   string
-	Line   int
-	Column int
-	Reason string
+	File       string
+	Line       int
+	Column     int
+	Reason     string
+	Reference  int
+	CaseFile   string
+	CaseLine   int
+	CaseColumn int
 }
 
 func (r *Rejection) Error() string {
+	if r.Reference > 0 {
+		return fmt.Sprintf("%s:%d:%d: reference %d (%s:%d:%d): %s", r.File, r.Line, r.Column, r.Reference, r.CaseFile, r.CaseLine, r.CaseColumn, r.Reason)
+	}
 	return fmt.Sprintf("%s:%d:%d: %s", r.File, r.Line, r.Column, r.Reason)
 }
 
-// Load reads the case file at path. It does not modify the file.
-func Load(path string) (Case, error) {
+// Load reads the case or suite file at path. A file with cases is a suite.
+// A file with name or steps is a case. It does not modify any file.
+// The suite result is nil when path is a case. The case result is zero when path is a suite.
+func Load(path string) (Case, *Suite, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return Case{}, &Rejection{File: path, Line: 0, Column: 0, Reason: "cannot read file"}
+		return Case{}, nil, &Rejection{File: path, Line: 0, Column: 0, Reason: "cannot read file"}
 	}
+	return loadData(path, data)
+}
+
+func loadData(path string, data []byte) (Case, *Suite, error) {
 	if !utf8.Valid(data) {
 		line, column := invalidUTF8Position(data)
-		return Case{}, &Rejection{
+		return Case{}, nil, &Rejection{
 			File:   path,
 			Line:   line,
 			Column: column,
@@ -162,12 +182,36 @@ func Load(path string) (Case, error) {
 	}
 	doc, err := parseDocument(path, data)
 	if err != nil {
-		return Case{}, err
+		return Case{}, nil, err
 	}
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
-		return Case{}, &Rejection{File: path, Line: 1, Column: 1, Reason: "case must be a mapping"}
+		return Case{}, nil, &Rejection{File: path, Line: 1, Column: 1, Reason: "case must be a mapping"}
 	}
-	return decodeCase(path, doc.Content[0])
+	return decodeFile(path, doc.Content[0])
+}
+
+func decodeFile(path string, node *yaml.Node) (Case, *Suite, error) {
+	if node.Kind != yaml.MappingNode {
+		return Case{}, nil, reject(path, node, "case must be a mapping")
+	}
+	var hasCases, hasCase bool
+	for i := 0; i < len(node.Content); i += 2 {
+		switch node.Content[i].Value {
+		case "cases":
+			hasCases = true
+		case "name", "steps":
+			hasCase = true
+		}
+	}
+	if hasCases && hasCase {
+		return Case{}, nil, rejectMixed(path, node)
+	}
+	if hasCases {
+		suite, err := decodeSuite(path, node)
+		return Case{}, suite, err
+	}
+	loaded, err := decodeCase(path, node)
+	return loaded, nil, err
 }
 
 func parseDocument(path string, data []byte) (yaml.Node, error) {
@@ -1136,4 +1180,135 @@ func invalidUTF8Position(data []byte) (int, int) {
 func nameFromPath(path string) string {
 	base := filepath.Base(path)
 	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
+func rejectMixed(path string, node *yaml.Node) error {
+	var seenCases, seenCase bool
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i]
+		switch key.Value {
+		case "cases":
+			if seenCase {
+				return reject(path, key, "file mixes case and suite fields")
+			}
+			seenCases = true
+		case "name", "steps":
+			if seenCases {
+				return reject(path, key, "file mixes case and suite fields")
+			}
+			seenCase = true
+		}
+	}
+	return reject(path, node, "file mixes case and suite fields")
+}
+
+func decodeSuite(path string, node *yaml.Node) (*Suite, error) {
+	var cases *yaml.Node
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i]
+		val := node.Content[i+1]
+		if err := noteKey(path, seen, key); err != nil {
+			return nil, err
+		}
+		switch key.Value {
+		case "cases":
+			cases = val
+		default:
+			return nil, reject(path, key, fmt.Sprintf("unknown field %q", key.Value))
+		}
+	}
+	if cases == nil {
+		return nil, reject(path, node, "missing cases")
+	}
+	if cases.Kind != yaml.SequenceNode {
+		return nil, reject(path, cases, "cases must be a sequence")
+	}
+	if len(cases.Content) == 0 {
+		return nil, reject(path, cases, "cases must not be empty")
+	}
+	suite := &Suite{Cases: make([]Case, 0, len(cases.Content))}
+	for i, item := range cases.Content {
+		loaded, err := loadReferencedCase(path, i+1, item)
+		if err != nil {
+			return nil, err
+		}
+		suite.Cases = append(suite.Cases, loaded)
+	}
+	return suite, nil
+}
+
+func loadReferencedCase(suitePath string, reference int, item *yaml.Node) (Case, error) {
+	if item.Tag != "!!str" {
+		return Case{}, referenceRejection(suitePath, reference, item, "", &Rejection{
+			Line:   item.Line,
+			Column: item.Column,
+			Reason: "case path must be a string",
+		})
+	}
+	ref := item.Value
+	if ref == "" {
+		return Case{}, referenceRejection(suitePath, reference, item, "", &Rejection{
+			Line:   item.Line,
+			Column: item.Column,
+			Reason: "case path must not be empty",
+		})
+	}
+	if filepath.IsAbs(filepath.FromSlash(ref)) {
+		return Case{}, referenceRejection(suitePath, reference, item, ref, &Rejection{
+			Line:   item.Line,
+			Column: item.Column,
+			Reason: "case path must be relative",
+		})
+	}
+	casePath := filepath.Clean(filepath.Join(filepath.Dir(suitePath), filepath.FromSlash(ref)))
+	data, err := os.ReadFile(casePath)
+	if err != nil {
+		return Case{}, referenceRejection(suitePath, reference, item, casePath, &Rejection{
+			Line:   item.Line,
+			Column: item.Column,
+			Reason: "cannot read file",
+		})
+	}
+	loaded, suite, err := loadData(casePath, data)
+	if suite != nil {
+		return Case{}, referenceRejection(suitePath, reference, item, casePath, &Rejection{
+			Line:   item.Line,
+			Column: item.Column,
+			Reason: "referenced file is a suite",
+		})
+	}
+	if err != nil {
+		inner, ok := err.(*Rejection)
+		if !ok {
+			return Case{}, referenceRejection(suitePath, reference, item, casePath, &Rejection{
+				Line:   item.Line,
+				Column: item.Column,
+				Reason: err.Error(),
+			})
+		}
+		return Case{}, referenceRejection(suitePath, reference, item, casePath, inner)
+	}
+	return loaded, nil
+}
+
+func referenceRejection(suitePath string, reference int, item *yaml.Node, casePath string, inner *Rejection) error {
+	line, column := item.Line, item.Column
+	caseLine, caseColumn := inner.CaseLine, inner.CaseColumn
+	if inner.File != "" {
+		caseLine, caseColumn = inner.Line, inner.Column
+	}
+	if inner.Reason == "cannot read file" || inner.Reason == "case path must be relative" || inner.Reason == "case path must not be empty" || inner.Reason == "case path must be a string" || inner.Reason == "referenced file is a suite" {
+		caseLine, caseColumn = 0, 0
+	}
+	return &Rejection{
+		File:       suitePath,
+		Line:       line,
+		Column:     column,
+		Reason:     inner.Reason,
+		Reference:  reference,
+		CaseFile:   casePath,
+		CaseLine:   caseLine,
+		CaseColumn: caseColumn,
+	}
 }
