@@ -1,0 +1,15 @@
+name: Drag
+steps:
+  - name: Across
+    swipe:
+      from_x: -0.25
+      from_y: 0
+      to_x: 1.5
+      to_y: 2
+      duration: 2s
+  - swipe:
+      from_x: 0.25
+      from_y: 0.75
+      to_x: 0.75
+      to_y: 0.25
+      duration: 1500ms

@@ -1,0 +1,14 @@
+name: Press
+steps:
+  - name: Hold send
+    long_press:
+      locator:
+        id: send
+        text: Send
+        index: 1
+      duration: 2s
+  - long_press:
+      locator:
+        description: Hold
+        type: Button
+      duration: 1500ms

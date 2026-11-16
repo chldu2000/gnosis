@@ -1,0 +1,5 @@
+name: Launch mail
+steps:
+  - launch:
+      app: com.example.mail
+      bundle: extra

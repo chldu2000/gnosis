@@ -1,0 +1,12 @@
+name: Point
+steps:
+  - name: Top
+    tap_at:
+      x: 0.25
+      y: 0.75
+  - tap_at:
+      x: -0.25
+      y: 1.5
+  - tap_at:
+      x: 2
+      y: -1

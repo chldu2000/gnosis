@@ -1,0 +1,7 @@
+name: Enter
+steps:
+  - name: Username
+    type:
+      text: Ada
+  - type:
+      text: ""

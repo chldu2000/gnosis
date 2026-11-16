@@ -1,0 +1,3 @@
+name: Launch mail
+steps:
+  - launch: com.example.mail

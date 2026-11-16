@@ -1,0 +1,4 @@
+name: Odd
+steps:
+  - drag:
+      from_x: 0

@@ -1,0 +1,4 @@
+name: Keys
+steps:
+  - key:
+      name: menu

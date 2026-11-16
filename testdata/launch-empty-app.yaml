@@ -1,0 +1,4 @@
+name: Launch mail
+steps:
+  - launch:
+      app: ""

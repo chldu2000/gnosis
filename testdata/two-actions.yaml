@@ -1,0 +1,7 @@
+name: Mixed
+steps:
+  - tap:
+      locator:
+        id: login
+    launch:
+      app: com.example.mail

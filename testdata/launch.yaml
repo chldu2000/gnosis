@@ -1,0 +1,6 @@
+name: Launch mail
+steps:
+  - name: Open mail
+    launch:
+      app: com.example.mail
+      entry: .Inbox

@@ -1,0 +1,5 @@
+name: Point
+steps:
+  - tap_at:
+      x: left
+      y: 0

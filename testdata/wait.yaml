@@ -1,0 +1,7 @@
+name: Pause
+steps:
+  - name: Settle
+    wait:
+      duration: 10s
+  - wait:
+      duration: 0s

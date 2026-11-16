@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
@@ -19,13 +21,68 @@ type Case struct {
 	Steps []Step
 }
 
-// Step is one tap step. Name is empty when the file omits it.
+// Step is one action. Name is empty when the file omits it.
+// A tap stores its locator in Locator. Every other action leaves Locator zero
+// and sets the field for that action.
 type Step struct {
-	Name    string
-	Locator Locator
+	Name      string
+	Locator   Locator
+	Launch    *Launch
+	LongPress *LongPress
+	TapAt     *TapAt
+	Swipe     *Swipe
+	Type      *Type
+	Key       *Key
+	Wait      *Wait
 }
 
-// Locator is the set of conditions written on a tap step.
+// Launch starts an application. Entry is empty when the file omits it.
+type Launch struct {
+	App   string
+	Entry string
+}
+
+// LongPress is a long press on a locator.
+// Duration is 800ms when the file omits it.
+type LongPress struct {
+	Locator  Locator
+	Duration time.Duration
+}
+
+// TapAt is a tap at fractions of the screen width and height.
+// X and Y are kept even when they fall outside 0..1.
+type TapAt struct {
+	X float64
+	Y float64
+}
+
+// Swipe moves between two points given as fractions of the screen width and height.
+// The fractions are kept even when they fall outside 0..1.
+// Duration is 300ms when the file omits it.
+type Swipe struct {
+	FromX    float64
+	FromY    float64
+	ToX      float64
+	ToY      float64
+	Duration time.Duration
+}
+
+// Type enters text into the focused field.
+type Type struct {
+	Text string
+}
+
+// Key presses back or home.
+type Key struct {
+	Name string
+}
+
+// Wait pauses for Duration. The file must set it; there is no default.
+type Wait struct {
+	Duration time.Duration
+}
+
+// Locator is the set of conditions that find an element.
 // Index is the 1-based match ordinal. Zero means the file did not set an index.
 type Locator struct {
 	ID          string
@@ -155,9 +212,10 @@ func decodeStep(path string, node *yaml.Node) (Step, error) {
 		return Step{}, reject(path, node, "step must be a mapping")
 	}
 	var (
-		step   Step
-		tap    *yaml.Node
-		tapKey *yaml.Node
+		step      Step
+		action    string
+		actionKey *yaml.Node
+		actionVal *yaml.Node
 	)
 	seen := map[string]bool{}
 	for i := 0; i < len(node.Content); i += 2 {
@@ -173,22 +231,409 @@ func decodeStep(path string, node *yaml.Node) (Step, error) {
 				return Step{}, err
 			}
 			step.Name = decoded
-		case "tap":
-			tap = val
-			tapKey = key
+		case "tap", "launch", "long_press", "tap_at", "swipe", "type", "key", "wait":
+			if action != "" {
+				return Step{}, reject(path, key, "step has more than one action")
+			}
+			action = key.Value
+			actionKey = key
+			actionVal = val
 		default:
 			return Step{}, reject(path, key, fmt.Sprintf("unknown field %q", key.Value))
 		}
 	}
-	if tap == nil {
+	switch action {
+	case "tap":
+		locator, err := decodeTap(path, actionKey, actionVal)
+		if err != nil {
+			return Step{}, err
+		}
+		step.Locator = locator
+	case "launch":
+		launch, err := decodeLaunch(path, actionKey, actionVal)
+		if err != nil {
+			return Step{}, err
+		}
+		step.Launch = &launch
+	case "long_press":
+		press, err := decodeLongPress(path, actionKey, actionVal)
+		if err != nil {
+			return Step{}, err
+		}
+		step.LongPress = &press
+	case "tap_at":
+		point, err := decodeTapAt(path, actionKey, actionVal)
+		if err != nil {
+			return Step{}, err
+		}
+		step.TapAt = &point
+	case "swipe":
+		swipe, err := decodeSwipe(path, actionKey, actionVal)
+		if err != nil {
+			return Step{}, err
+		}
+		step.Swipe = &swipe
+	case "type":
+		typed, err := decodeType(path, actionKey, actionVal)
+		if err != nil {
+			return Step{}, err
+		}
+		step.Type = &typed
+	case "key":
+		keyPress, err := decodeKey(path, actionKey, actionVal)
+		if err != nil {
+			return Step{}, err
+		}
+		step.Key = &keyPress
+	case "wait":
+		pause, err := decodeWait(path, actionKey, actionVal)
+		if err != nil {
+			return Step{}, err
+		}
+		step.Wait = &pause
+	default:
 		return Step{}, reject(path, node, "missing tap")
 	}
-	locator, err := decodeTap(path, tapKey, tap)
-	if err != nil {
-		return Step{}, err
-	}
-	step.Locator = locator
 	return step, nil
+}
+
+func decodeLaunch(path string, key, node *yaml.Node) (Launch, error) {
+	if node.Kind != yaml.MappingNode {
+		return Launch{}, reject(path, node, "launch must be a mapping")
+	}
+	var (
+		launch Launch
+		hasApp bool
+	)
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		field := node.Content[i]
+		val := node.Content[i+1]
+		if err := noteKey(path, seen, field); err != nil {
+			return Launch{}, err
+		}
+		var err error
+		switch field.Value {
+		case "app":
+			launch.App, err = decodeString(path, field, val)
+			hasApp = true
+		case "entry":
+			launch.Entry, err = decodeString(path, field, val)
+		default:
+			return Launch{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+		}
+		if err != nil {
+			return Launch{}, err
+		}
+	}
+	if !hasApp {
+		return Launch{}, reject(path, key, "missing app")
+	}
+	return launch, nil
+}
+
+func decodeTapAt(path string, key, node *yaml.Node) (TapAt, error) {
+	if node.Kind != yaml.MappingNode {
+		return TapAt{}, reject(path, node, "tap_at must be a mapping")
+	}
+	var (
+		point TapAt
+		hasX  bool
+		hasY  bool
+	)
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		field := node.Content[i]
+		val := node.Content[i+1]
+		if err := noteKey(path, seen, field); err != nil {
+			return TapAt{}, err
+		}
+		var err error
+		switch field.Value {
+		case "x":
+			point.X, err = decodeNumber(path, field, val)
+			hasX = true
+		case "y":
+			point.Y, err = decodeNumber(path, field, val)
+			hasY = true
+		default:
+			return TapAt{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+		}
+		if err != nil {
+			return TapAt{}, err
+		}
+	}
+	if !hasX {
+		return TapAt{}, reject(path, key, "missing x")
+	}
+	if !hasY {
+		return TapAt{}, reject(path, key, "missing y")
+	}
+	return point, nil
+}
+
+func decodeWait(path string, key, node *yaml.Node) (Wait, error) {
+	if node.Kind != yaml.MappingNode {
+		return Wait{}, reject(path, node, "wait must be a mapping")
+	}
+	var (
+		pause       Wait
+		hasDuration bool
+	)
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		field := node.Content[i]
+		val := node.Content[i+1]
+		if err := noteKey(path, seen, field); err != nil {
+			return Wait{}, err
+		}
+		switch field.Value {
+		case "duration":
+			decoded, err := decodeDuration(path, val)
+			if err != nil {
+				return Wait{}, err
+			}
+			pause.Duration = decoded
+			hasDuration = true
+		default:
+			return Wait{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+		}
+	}
+	if !hasDuration {
+		return Wait{}, reject(path, key, "missing duration")
+	}
+	return pause, nil
+}
+
+func decodeKey(path string, key, node *yaml.Node) (Key, error) {
+	if node.Kind != yaml.MappingNode {
+		return Key{}, reject(path, node, "key must be a mapping")
+	}
+	var (
+		press   Key
+		hasName bool
+	)
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		field := node.Content[i]
+		val := node.Content[i+1]
+		if err := noteKey(path, seen, field); err != nil {
+			return Key{}, err
+		}
+		switch field.Value {
+		case "name":
+			decoded, err := decodeString(path, field, val)
+			if err != nil {
+				return Key{}, err
+			}
+			if decoded != "back" && decoded != "home" {
+				return Key{}, reject(path, val, fmt.Sprintf("unknown key %q", decoded))
+			}
+			press.Name = decoded
+			hasName = true
+		default:
+			return Key{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+		}
+	}
+	if !hasName {
+		return Key{}, reject(path, key, "missing name")
+	}
+	return press, nil
+}
+
+func decodeType(path string, key, node *yaml.Node) (Type, error) {
+	if node.Kind != yaml.MappingNode {
+		return Type{}, reject(path, node, "type must be a mapping")
+	}
+	var (
+		typed   Type
+		hasText bool
+	)
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		field := node.Content[i]
+		val := node.Content[i+1]
+		if err := noteKey(path, seen, field); err != nil {
+			return Type{}, err
+		}
+		switch field.Value {
+		case "text":
+			decoded, err := decodeString(path, field, val)
+			if err != nil {
+				return Type{}, err
+			}
+			typed.Text = decoded
+			hasText = true
+		default:
+			return Type{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+		}
+	}
+	if !hasText {
+		return Type{}, reject(path, key, "missing text")
+	}
+	return typed, nil
+}
+
+func decodeSwipe(path string, key, node *yaml.Node) (Swipe, error) {
+	if node.Kind != yaml.MappingNode {
+		return Swipe{}, reject(path, node, "swipe must be a mapping")
+	}
+	var (
+		swipe       Swipe
+		hasFromX    bool
+		hasFromY    bool
+		hasToX      bool
+		hasToY      bool
+		hasDuration bool
+	)
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		field := node.Content[i]
+		val := node.Content[i+1]
+		if err := noteKey(path, seen, field); err != nil {
+			return Swipe{}, err
+		}
+		var err error
+		switch field.Value {
+		case "from_x":
+			swipe.FromX, err = decodeNumber(path, field, val)
+			hasFromX = true
+		case "from_y":
+			swipe.FromY, err = decodeNumber(path, field, val)
+			hasFromY = true
+		case "to_x":
+			swipe.ToX, err = decodeNumber(path, field, val)
+			hasToX = true
+		case "to_y":
+			swipe.ToY, err = decodeNumber(path, field, val)
+			hasToY = true
+		case "duration":
+			decoded, durErr := decodeDuration(path, val)
+			if durErr != nil {
+				return Swipe{}, durErr
+			}
+			swipe.Duration = decoded
+			hasDuration = true
+		default:
+			return Swipe{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+		}
+		if err != nil {
+			return Swipe{}, err
+		}
+	}
+	switch {
+	case !hasFromX:
+		return Swipe{}, reject(path, key, "missing from_x")
+	case !hasFromY:
+		return Swipe{}, reject(path, key, "missing from_y")
+	case !hasToX:
+		return Swipe{}, reject(path, key, "missing to_x")
+	case !hasToY:
+		return Swipe{}, reject(path, key, "missing to_y")
+	}
+	if !hasDuration {
+		swipe.Duration = 300 * time.Millisecond
+	}
+	return swipe, nil
+}
+
+func decodeNumber(path string, key, val *yaml.Node) (float64, error) {
+	if val.Tag != "!!int" && val.Tag != "!!float" {
+		return 0, reject(path, val, fmt.Sprintf("field %q must be a number", key.Value))
+	}
+	n, err := strconv.ParseFloat(val.Value, 64)
+	if err != nil {
+		return 0, reject(path, val, fmt.Sprintf("field %q must be a number", key.Value))
+	}
+	return n, nil
+}
+
+func decodeLongPress(path string, key, node *yaml.Node) (LongPress, error) {
+	if node.Kind != yaml.MappingNode {
+		return LongPress{}, reject(path, node, "long_press must be a mapping")
+	}
+	var (
+		press       LongPress
+		locator     *yaml.Node
+		locatorKey  *yaml.Node
+		hasDuration bool
+	)
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		field := node.Content[i]
+		val := node.Content[i+1]
+		if err := noteKey(path, seen, field); err != nil {
+			return LongPress{}, err
+		}
+		switch field.Value {
+		case "locator":
+			locator = val
+			locatorKey = field
+		case "duration":
+			decoded, err := decodeDuration(path, val)
+			if err != nil {
+				return LongPress{}, err
+			}
+			press.Duration = decoded
+			hasDuration = true
+		default:
+			return LongPress{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+		}
+	}
+	if !hasDuration {
+		press.Duration = 800 * time.Millisecond
+	}
+	if locator == nil {
+		return LongPress{}, reject(path, key, "missing locator")
+	}
+	decoded, err := decodeLocator(path, locatorKey, locator)
+	if err != nil {
+		return LongPress{}, err
+	}
+	press.Locator = decoded
+	return press, nil
+}
+
+func decodeDuration(path string, node *yaml.Node) (time.Duration, error) {
+	if node.Kind != yaml.ScalarNode {
+		return 0, reject(path, node, "invalid duration")
+	}
+	decoded, ok := parseDuration(node.Value)
+	if !ok {
+		return 0, reject(path, node, fmt.Sprintf("invalid duration %q", node.Value))
+	}
+	return decoded, nil
+}
+
+func parseDuration(raw string) (time.Duration, bool) {
+	var (
+		digits string
+		unit   time.Duration
+		ok     bool
+	)
+	if digits, ok = strings.CutSuffix(raw, "ms"); ok {
+		unit = time.Millisecond
+	} else if digits, ok = strings.CutSuffix(raw, "s"); ok {
+		unit = time.Second
+	} else {
+		return 0, false
+	}
+	if digits == "" {
+		return 0, false
+	}
+	for _, r := range digits {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
+	n, err := strconv.ParseInt(digits, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	if n > int64(math.MaxInt64/unit) {
+		return 0, false
+	}
+	return time.Duration(n) * unit, true
 }
 
 func decodeTap(path string, key, node *yaml.Node) (Locator, error) {

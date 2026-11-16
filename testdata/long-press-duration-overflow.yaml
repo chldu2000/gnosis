@@ -1,0 +1,6 @@
+name: Press
+steps:
+  - long_press:
+      locator:
+        id: send
+      duration: 99999999999999999999s

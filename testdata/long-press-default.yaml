@@ -1,0 +1,5 @@
+name: Press
+steps:
+  - long_press:
+      locator:
+        id: send

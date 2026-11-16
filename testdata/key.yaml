@@ -1,0 +1,7 @@
+name: Keys
+steps:
+  - name: Leave
+    key:
+      name: back
+  - key:
+      name: home

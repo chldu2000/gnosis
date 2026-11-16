@@ -1,0 +1,4 @@
+name: Pause
+steps:
+  - wait:
+      duration: 1.5s
