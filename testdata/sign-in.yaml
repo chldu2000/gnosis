@@ -1,0 +1,12 @@
+name: Sign in
+steps:
+  - name: Tap the button
+    tap:
+      locator:
+        id: login
+        text: Sign in
+        index: 1
+  - tap:
+      locator:
+        description: Password
+        type: EditText

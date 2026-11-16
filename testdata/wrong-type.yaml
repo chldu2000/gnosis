@@ -1,0 +1,5 @@
+name: Sign in
+steps:
+  - tap:
+      locator:
+        id: 1

@@ -1,0 +1,4 @@
+steps:
+  - tap:
+      locator:
+        id: login
