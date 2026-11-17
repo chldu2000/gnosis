@@ -124,12 +124,13 @@ type Wait struct {
 }
 
 // Locator is the set of conditions that find an element.
+// A nil string condition is omitted; a pointer to "" is an explicit empty condition.
 // Index is the 1-based match ordinal. Zero means the file did not set an index.
 type Locator struct {
-	ID          string
-	Text        string
-	Description string
-	Type        string
+	ID          *string
+	Text        *string
+	Description *string
+	Type        *string
 	Index       int
 }
 
@@ -167,13 +168,18 @@ func Load(path string) (Case, *Suite, error) {
 	if err != nil {
 		return Case{}, nil, &Rejection{File: path, Line: 0, Column: 0, Reason: "cannot read file"}
 	}
-	return loadData(path, data)
+	node, err := parseFile(path, data)
+	if err != nil {
+		return Case{}, nil, err
+	}
+	return decodeFile(path, node)
 }
 
-func loadData(path string, data []byte) (Case, *Suite, error) {
+// parseFile validates the document without following any suite references.
+func parseFile(path string, data []byte) (*yaml.Node, error) {
 	if !utf8.Valid(data) {
 		line, column := invalidUTF8Position(data)
-		return Case{}, nil, &Rejection{
+		return nil, &Rejection{
 			File:   path,
 			Line:   line,
 			Column: column,
@@ -182,18 +188,19 @@ func loadData(path string, data []byte) (Case, *Suite, error) {
 	}
 	doc, err := parseDocument(path, data)
 	if err != nil {
-		return Case{}, nil, err
+		return nil, err
 	}
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
-		return Case{}, nil, &Rejection{File: path, Line: 1, Column: 1, Reason: "case must be a mapping"}
+		return nil, &Rejection{File: path, Line: 1, Column: 1, Reason: "case must be a mapping"}
 	}
-	return decodeFile(path, doc.Content[0])
+	node := doc.Content[0]
+	if node.Kind != yaml.MappingNode {
+		return nil, reject(path, node, "case must be a mapping")
+	}
+	return node, nil
 }
 
 func decodeFile(path string, node *yaml.Node) (Case, *Suite, error) {
-	if node.Kind != yaml.MappingNode {
-		return Case{}, nil, reject(path, node, "case must be a mapping")
-	}
 	var hasCases, hasCase bool
 	for i := 0; i < len(node.Content); i += 2 {
 		switch node.Content[i].Value {
@@ -445,10 +452,11 @@ func decodeAI(path string, key, node *yaml.Node) (AI, error) {
 }
 
 func decodeMaxSteps(path string, node *yaml.Node) (int, error) {
-	if node.Tag != "!!int" {
+	if node.Kind != yaml.ScalarNode || node.Tag != "!!int" {
 		return 0, reject(path, node, `field "max_steps" must be a positive integer`)
 	}
-	n, err := strconv.Atoi(node.Value)
+	var n int
+	err := node.Decode(&n)
 	if err != nil || n < 1 {
 		return 0, reject(path, node, `field "max_steps" must be a positive integer`)
 	}
@@ -547,11 +555,16 @@ func decodeAssertion(path, kind string, key, node *yaml.Node) (Assertion, error)
 }
 
 func decodeScreenText(path string, key, node *yaml.Node) (ScreenText, error) {
+	text, err := decodeRequiredText(path, "screen_text", key, node)
+	return ScreenText{Text: text}, err
+}
+
+func decodeRequiredText(path, kind string, key, node *yaml.Node) (string, error) {
 	if node.Kind != yaml.MappingNode {
-		return ScreenText{}, reject(path, node, "screen_text must be a mapping")
+		return "", reject(path, node, kind+" must be a mapping")
 	}
 	var (
-		check   ScreenText
+		text    string
 		hasText bool
 	)
 	seen := map[string]bool{}
@@ -559,24 +572,24 @@ func decodeScreenText(path string, key, node *yaml.Node) (ScreenText, error) {
 		field := node.Content[i]
 		val := node.Content[i+1]
 		if err := noteKey(path, seen, field); err != nil {
-			return ScreenText{}, err
+			return "", err
 		}
 		switch field.Value {
 		case "text":
 			decoded, err := decodeString(path, field, val)
 			if err != nil {
-				return ScreenText{}, err
+				return "", err
 			}
-			check.Text = decoded
+			text = decoded
 			hasText = true
 		default:
-			return ScreenText{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+			return "", reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
 		}
 	}
 	if !hasText {
-		return ScreenText{}, reject(path, key, "missing text")
+		return "", reject(path, key, "missing text")
 	}
-	return check, nil
+	return text, nil
 }
 
 func decodeAttrEquals(path string, key, node *yaml.Node) (AttrEquals, error) {
@@ -640,7 +653,7 @@ func decodeAttrEquals(path string, key, node *yaml.Node) (AttrEquals, error) {
 }
 
 func decodeBool(path string, key, val *yaml.Node) (bool, error) {
-	if val.Tag != "!!bool" {
+	if val.Kind != yaml.ScalarNode || val.Tag != "!!bool" {
 		return false, reject(path, val, fmt.Sprintf("field %q must be a boolean", key.Value))
 	}
 	decoded, err := strconv.ParseBool(val.Value)
@@ -841,36 +854,8 @@ func decodeKey(path string, key, node *yaml.Node) (Key, error) {
 }
 
 func decodeType(path string, key, node *yaml.Node) (Type, error) {
-	if node.Kind != yaml.MappingNode {
-		return Type{}, reject(path, node, "type must be a mapping")
-	}
-	var (
-		typed   Type
-		hasText bool
-	)
-	seen := map[string]bool{}
-	for i := 0; i < len(node.Content); i += 2 {
-		field := node.Content[i]
-		val := node.Content[i+1]
-		if err := noteKey(path, seen, field); err != nil {
-			return Type{}, err
-		}
-		switch field.Value {
-		case "text":
-			decoded, err := decodeString(path, field, val)
-			if err != nil {
-				return Type{}, err
-			}
-			typed.Text = decoded
-			hasText = true
-		default:
-			return Type{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
-		}
-	}
-	if !hasText {
-		return Type{}, reject(path, key, "missing text")
-	}
-	return typed, nil
+	text, err := decodeRequiredText(path, "type", key, node)
+	return Type{Text: text}, err
 }
 
 func decodeSwipe(path string, key, node *yaml.Node) (Swipe, error) {
@@ -937,11 +922,11 @@ func decodeSwipe(path string, key, node *yaml.Node) (Swipe, error) {
 }
 
 func decodeNumber(path string, key, val *yaml.Node) (float64, error) {
-	if val.Tag != "!!int" && val.Tag != "!!float" {
+	if val.Kind != yaml.ScalarNode || (val.Tag != "!!int" && val.Tag != "!!float") {
 		return 0, reject(path, val, fmt.Sprintf("field %q must be a number", key.Value))
 	}
-	n, err := strconv.ParseFloat(val.Value, 64)
-	if err != nil {
+	var n float64
+	if err := val.Decode(&n); err != nil {
 		return 0, reject(path, val, fmt.Sprintf("field %q must be a number", key.Value))
 	}
 	return n, nil
@@ -1068,10 +1053,7 @@ func decodeLocator(path string, key, node *yaml.Node) (Locator, error) {
 	if node.Kind != yaml.MappingNode {
 		return Locator{}, reject(path, node, "locator must be a mapping")
 	}
-	var (
-		loc          Locator
-		hasCondition bool
-	)
+	var loc Locator
 	seen := map[string]bool{}
 	for i := 0; i < len(node.Content); i += 2 {
 		field := node.Content[i]
@@ -1079,48 +1061,46 @@ func decodeLocator(path string, key, node *yaml.Node) (Locator, error) {
 		if err := noteKey(path, seen, field); err != nil {
 			return Locator{}, err
 		}
-		var err error
+		var condition **string
 		switch field.Value {
 		case "id":
-			loc.ID, err = decodeString(path, field, val)
-			hasCondition = true
+			condition = &loc.ID
 		case "text":
-			loc.Text, err = decodeString(path, field, val)
-			hasCondition = true
+			condition = &loc.Text
 		case "description":
-			loc.Description, err = decodeString(path, field, val)
-			hasCondition = true
+			condition = &loc.Description
 		case "type":
-			loc.Type, err = decodeString(path, field, val)
-			hasCondition = true
+			condition = &loc.Type
 		case "index":
-			if val.Tag != "!!int" {
+			if val.Kind != yaml.ScalarNode || val.Tag != "!!int" {
 				return Locator{}, reject(path, val, `field "index" must be an integer`)
 			}
 			var n int
-			n, err = strconv.Atoi(val.Value)
-			if err != nil {
+			if err := val.Decode(&n); err != nil {
 				return Locator{}, reject(path, val, `field "index" must be an integer`)
 			}
 			if n < 1 {
 				return Locator{}, reject(path, val, "index must be >= 1")
 			}
 			loc.Index = n
+			continue
 		default:
 			return Locator{}, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
 		}
+		decoded, err := decodeString(path, field, val)
 		if err != nil {
 			return Locator{}, err
 		}
+		*condition = &decoded
 	}
-	if !hasCondition {
+	if loc.ID == nil && loc.Text == nil && loc.Description == nil && loc.Type == nil {
 		return Locator{}, reject(path, key, "locator requires id, text, description, or type")
 	}
 	return loc, nil
 }
 
 func decodeString(path string, key, val *yaml.Node) (string, error) {
-	if val.Tag != "!!str" {
+	if val.Kind != yaml.ScalarNode || val.Tag != "!!str" {
 		return "", reject(path, val, fmt.Sprintf("field %q must be a string", key.Value))
 	}
 	return val.Value, nil
@@ -1239,7 +1219,7 @@ func decodeSuite(path string, node *yaml.Node) (*Suite, error) {
 }
 
 func loadReferencedCase(suitePath string, reference int, item *yaml.Node) (Case, error) {
-	if item.Tag != "!!str" {
+	if item.Kind != yaml.ScalarNode || item.Tag != "!!str" {
 		return Case{}, referenceRejection(suitePath, reference, item, "", &Rejection{
 			Line:   item.Line,
 			Column: item.Column,
@@ -1270,13 +1250,20 @@ func loadReferencedCase(suitePath string, reference int, item *yaml.Node) (Case,
 			Reason: "cannot read file",
 		})
 	}
-	loaded, suite, err := loadData(casePath, data)
-	if suite != nil {
-		return Case{}, referenceRejection(suitePath, reference, item, casePath, &Rejection{
-			Line:   item.Line,
-			Column: item.Column,
-			Reason: "referenced file is a suite",
-		})
+	node, err := parseFile(casePath, data)
+	var loaded Case
+	if err == nil {
+		// A reference must be a case. Never expand a nested suite, even to validate it.
+		for i := 0; i < len(node.Content); i += 2 {
+			key := node.Content[i]
+			if key.Value == "cases" {
+				err = reject(casePath, key, "referenced file is a suite")
+				break
+			}
+		}
+		if err == nil {
+			loaded, err = decodeCase(casePath, node)
+		}
 	}
 	if err != nil {
 		inner, ok := err.(*Rejection)
@@ -1294,12 +1281,10 @@ func loadReferencedCase(suitePath string, reference int, item *yaml.Node) (Case,
 
 func referenceRejection(suitePath string, reference int, item *yaml.Node, casePath string, inner *Rejection) error {
 	line, column := item.Line, item.Column
-	caseLine, caseColumn := inner.CaseLine, inner.CaseColumn
+	var caseLine, caseColumn int
+	// Only errors located inside the referenced file carry a case position.
 	if inner.File != "" {
 		caseLine, caseColumn = inner.Line, inner.Column
-	}
-	if inner.Reason == "cannot read file" || inner.Reason == "case path must be relative" || inner.Reason == "case path must not be empty" || inner.Reason == "case path must be a string" || inner.Reason == "referenced file is a suite" {
-		caseLine, caseColumn = 0, 0
 	}
 	return &Rejection{
 		File:       suitePath,

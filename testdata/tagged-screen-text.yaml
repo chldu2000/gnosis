@@ -1,0 +1,4 @@
+steps:
+  - expect:
+      screen_text:
+        text: !!str {wrong: value}

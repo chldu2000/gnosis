@@ -11,6 +11,10 @@ import (
 	"gnosis"
 )
 
+func locatorString(value string) *string {
+	return &value
+}
+
 func TestLoad_caseNameStepOrderAndLocatorMatchTheFile(t *testing.T) {
 	path := filepath.Join("testdata", "sign-in.yaml")
 
@@ -25,15 +29,15 @@ func TestLoad_caseNameStepOrderAndLocatorMatchTheFile(t *testing.T) {
 			{
 				Name: "Tap the button",
 				Locator: gnosis.Locator{
-					ID:    "login",
-					Text:  "Sign in",
+					ID:    locatorString("login"),
+					Text:  locatorString("Sign in"),
 					Index: 1,
 				},
 			},
 			{
 				Locator: gnosis.Locator{
-					Description: "Password",
-					Type:        "EditText",
+					Description: locatorString("Password"),
+					Type:        locatorString("EditText"),
 				},
 			},
 		},
@@ -309,7 +313,7 @@ func TestLoad_keepsAnEmptyLocatorID(t *testing.T) {
 	want := gnosis.Case{
 		Name: "Sign in",
 		Steps: []gnosis.Step{{
-			Locator: gnosis.Locator{ID: ""},
+			Locator: gnosis.Locator{ID: locatorString("")},
 		}},
 	}
 	if !reflect.DeepEqual(got, want) {

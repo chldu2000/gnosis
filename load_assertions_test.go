@@ -52,17 +52,17 @@ func TestLoad_checksPositionsActionsAndAIKeepFileOrder(t *testing.T) {
 				Precondition: &gnosis.Assertion{
 					Timeout: 10 * time.Second,
 					Exists: &gnosis.Locator{
-						ID:   "login",
-						Text: "Sign in",
+						ID:   locatorString("login"),
+						Text: locatorString("Sign in"),
 					},
 				},
 			},
-			{Locator: gnosis.Locator{ID: "login"}},
+			{Locator: gnosis.Locator{ID: locatorString("login")}},
 			{
 				Expect: &gnosis.Assertion{
 					Timeout: 2 * time.Second,
 					TextEquals: &gnosis.TextCheck{
-						Locator: gnosis.Locator{ID: "title"},
+						Locator: gnosis.Locator{ID: locatorString("title")},
 						Text:    "Welcome",
 					},
 				},
@@ -70,14 +70,14 @@ func TestLoad_checksPositionsActionsAndAIKeepFileOrder(t *testing.T) {
 			{
 				Precondition: &gnosis.Assertion{
 					Timeout: 0,
-					Absent:  &gnosis.Locator{ID: "spinner"},
+					Absent:  &gnosis.Locator{ID: locatorString("spinner")},
 				},
 			},
 			{
 				Expect: &gnosis.Assertion{
 					Timeout: 10 * time.Second,
 					TextContains: &gnosis.TextCheck{
-						Locator: gnosis.Locator{Description: "Hint"},
+						Locator: gnosis.Locator{Description: locatorString("Hint")},
 						Text:    "saved",
 					},
 				},
@@ -86,7 +86,7 @@ func TestLoad_checksPositionsActionsAndAIKeepFileOrder(t *testing.T) {
 				Precondition: &gnosis.Assertion{
 					Timeout: 10 * time.Second,
 					AttrEquals: &gnosis.AttrEquals{
-						Locator:   gnosis.Locator{ID: "agree"},
+						Locator:   gnosis.Locator{ID: locatorString("agree")},
 						Attribute: "checked",
 						Value:     true,
 					},
@@ -326,7 +326,7 @@ func TestLoad_attrEqualsMatchesTheFile(t *testing.T) {
 				Expect: &gnosis.Assertion{
 					Timeout: 4 * time.Second,
 					AttrEquals: &gnosis.AttrEquals{
-						Locator:   gnosis.Locator{ID: "send", Type: "Button"},
+						Locator:   gnosis.Locator{ID: locatorString("send"), Type: locatorString("Button")},
 						Attribute: "enabled",
 						Value:     true,
 					},
@@ -336,7 +336,7 @@ func TestLoad_attrEqualsMatchesTheFile(t *testing.T) {
 				Precondition: &gnosis.Assertion{
 					Timeout: 10 * time.Second,
 					AttrEquals: &gnosis.AttrEquals{
-						Locator:   gnosis.Locator{Description: "Agree"},
+						Locator:   gnosis.Locator{Description: locatorString("Agree")},
 						Attribute: "checked",
 						Value:     false,
 					},
@@ -364,8 +364,8 @@ func TestLoad_preconditionTextContainsMatchesTheFile(t *testing.T) {
 				Timeout: 1500 * time.Millisecond,
 				TextContains: &gnosis.TextCheck{
 					Locator: gnosis.Locator{
-						Description: "Status",
-						Type:        "TextView",
+						Description: locatorString("Status"),
+						Type:        locatorString("TextView"),
 					},
 					Text: "saved",
 				},
@@ -392,7 +392,7 @@ func TestLoad_expectTextEqualsMatchesTheFile(t *testing.T) {
 			Expect: &gnosis.Assertion{
 				Timeout: 3 * time.Second,
 				TextEquals: &gnosis.TextCheck{
-					Locator: gnosis.Locator{ID: "title", Index: 2},
+					Locator: gnosis.Locator{ID: locatorString("title"), Index: 2},
 					Text:    "Welcome",
 				},
 			},
@@ -418,8 +418,8 @@ func TestLoad_preconditionAbsentMatchesTheFile(t *testing.T) {
 			Precondition: &gnosis.Assertion{
 				Timeout: time.Second,
 				Absent: &gnosis.Locator{
-					ID:   "dialog",
-					Text: "Saving",
+					ID:   locatorString("dialog"),
+					Text: locatorString("Saving"),
 				},
 			},
 		}},
@@ -444,8 +444,8 @@ func TestLoad_expectExistsMatchesTheFile(t *testing.T) {
 			Expect: &gnosis.Assertion{
 				Timeout: 2 * time.Second,
 				Exists: &gnosis.Locator{
-					Description: "Welcome",
-					Type:        "TextView",
+					Description: locatorString("Welcome"),
+					Type:        locatorString("TextView"),
 				},
 			},
 		}},
@@ -470,8 +470,8 @@ func TestLoad_preconditionExistsMatchesTheFile(t *testing.T) {
 			Precondition: &gnosis.Assertion{
 				Timeout: 5 * time.Second,
 				Exists: &gnosis.Locator{
-					ID:    "login",
-					Text:  "Sign in",
+					ID:    locatorString("login"),
+					Text:  locatorString("Sign in"),
 					Index: 1,
 				},
 			},
@@ -527,7 +527,7 @@ func TestLoad_omittedAssertionTimeoutIs10s(t *testing.T) {
 		Steps: []gnosis.Step{{
 			Precondition: &gnosis.Assertion{
 				Timeout: 10 * time.Second,
-				Exists:  &gnosis.Locator{ID: "login"},
+				Exists:  &gnosis.Locator{ID: locatorString("login")},
 			},
 		}},
 	}

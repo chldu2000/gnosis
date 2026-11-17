@@ -35,15 +35,15 @@ func TestLoad_suiteLoadsCasesInFileOrder(t *testing.T) {
 			{
 				Name: "Tap the button",
 				Locator: gnosis.Locator{
-					ID:    "login",
-					Text:  "Sign in",
+					ID:    locatorString("login"),
+					Text:  locatorString("Sign in"),
 					Index: 1,
 				},
 			},
 			{
 				Locator: gnosis.Locator{
-					Description: "Password",
-					Type:        "EditText",
+					Description: locatorString("Password"),
+					Type:        locatorString("EditText"),
 				},
 			},
 		},

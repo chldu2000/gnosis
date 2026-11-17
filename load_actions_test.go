@@ -187,8 +187,8 @@ func TestLoad_longPressLocatorAndDurationMatchTheFile(t *testing.T) {
 				Name: "Hold send",
 				LongPress: &gnosis.LongPress{
 					Locator: gnosis.Locator{
-						ID:    "send",
-						Text:  "Send",
+						ID:    locatorString("send"),
+						Text:  locatorString("Send"),
 						Index: 1,
 					},
 					Duration: 2 * time.Second,
@@ -197,8 +197,8 @@ func TestLoad_longPressLocatorAndDurationMatchTheFile(t *testing.T) {
 			{
 				LongPress: &gnosis.LongPress{
 					Locator: gnosis.Locator{
-						Description: "Hold",
-						Type:        "Button",
+						Description: locatorString("Hold"),
+						Type:        locatorString("Button"),
 					},
 					Duration: 1500 * time.Millisecond,
 				},
@@ -222,7 +222,7 @@ func TestLoad_omittedLongPressDurationIs800ms(t *testing.T) {
 		Name: "Press",
 		Steps: []gnosis.Step{{
 			LongPress: &gnosis.LongPress{
-				Locator:  gnosis.Locator{ID: "send"},
+				Locator:  gnosis.Locator{ID: locatorString("send")},
 				Duration: 800 * time.Millisecond,
 			},
 		}},
@@ -601,10 +601,10 @@ func TestLoad_actionsKeepFileOrderDefaultsAndOutOfRangeRatios(t *testing.T) {
 				Name:   "Open",
 				Launch: &gnosis.Launch{App: "com.example.mail"},
 			},
-			{Locator: gnosis.Locator{ID: "login"}},
+			{Locator: gnosis.Locator{ID: locatorString("login")}},
 			{
 				LongPress: &gnosis.LongPress{
-					Locator:  gnosis.Locator{Text: "Send"},
+					Locator:  gnosis.Locator{Text: locatorString("Send")},
 					Duration: 800 * time.Millisecond,
 				},
 			},

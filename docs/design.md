@@ -29,7 +29,7 @@ Ratio coordinates outside `[0, 1]` load successfully and become an **error** at 
 
 ### Assertions (closed set)
 
-Element exists, element absent, text equals, text contains, attribute equals (`enabled` or `selected` only), screen text visible (pixels / OCR). Default timeout 10 s; overridable per assertion. Assertions poll until true or the timeout ends.
+Element exists, element absent, text equals, text contains, attribute equals (`enabled` or `checked` only), screen text visible (pixels / OCR). Default timeout 10 s; overridable per assertion. Assertions poll until true or the timeout ends.
 
 - Locator miss: existence/text/attribute assertions have concluded (fail or block). Absence is true. Actions that need exactly one element: miss or ambiguous match without index → **error**.
 - Attribute missing on a found element → assertion false (fail or block).

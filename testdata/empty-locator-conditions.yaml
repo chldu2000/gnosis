@@ -1,0 +1,13 @@
+steps:
+  - tap:
+      locator: {id: button}
+  - tap:
+      locator: {id: button, text: ""}
+  - tap:
+      locator: {id: button, description: ""}
+  - tap:
+      locator: {id: button, type: ""}
+  - tap:
+      locator: {text: button}
+  - tap:
+      locator: {text: button, id: ""}
