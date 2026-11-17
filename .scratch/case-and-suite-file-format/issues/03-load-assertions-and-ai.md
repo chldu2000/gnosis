@@ -4,7 +4,7 @@
 
 **Blocked by:** 02: 载入其余动作
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 步骤的种类键再增加三种，仍然恰好一个：
 
@@ -13,8 +13,12 @@
 
 不写 `precondition` 或 `expect` 就不能载入断言。一个步骤里同时出现两种位置，或两种检查，都拒绝。
 
-- [ ] 六种检查、两种位置都能载入，并和动作、AI 步骤按文件顺序排在同一条用例里
-- [ ] 没写时限时结果是 10 秒；没写步数上限时结果是 20；写了则保留
-- [ ] 只有 AI 步骤的用例可以载入
-- [ ] 断言没写位置、检查种类不认识、属性名不认识、步数上限不是正整数，都拒绝并指出位置
-- [ ] 载入不修改文件
+- [x] 六种检查、两种位置都能载入，并和动作、AI 步骤按文件顺序排在同一条用例里
+- [x] 没写时限时结果是 10 秒；没写步数上限时结果是 20；写了则保留
+- [x] 只有 AI 步骤的用例可以载入
+- [x] 断言没写位置、检查种类不认识、属性名不认识、步数上限不是正整数，都拒绝并指出位置
+- [x] 载入不修改文件
+
+## Comments
+
+Implemented on `main` at `92f6124`. Covered by `load.go` and `load_assertions_test.go`. The tracker has no separate closed triage role, so this uses `resolved`.

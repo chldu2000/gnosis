@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: resolved
 
 # 用例与套件的文件格式与载入
 

@@ -4,15 +4,19 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 文件是 UTF-8 YAML。用例只允许 `name`（可选字符串）和 `steps`（可选序列）。步骤只允许可选的 `name`，以及恰好一个种类键。本票只实现 `tap`：其值是映射，必填 `locator`。定位器允许 `id`、`text`、`description`、`type`（字符串）和 `index`（整数，从 1 起）。至少要有 `id`、`text`、`description`、`type` 之一；只有 `index` 时拒绝。`index` 小于 1 时拒绝。
 
 载入入口接受路径。成功时给出用例：名称、有序步骤（含可选名称和定位器原文）。失败时给出文件、行、列和原因。载入前后文件字节不变。重复的 YAML 键拒绝，不取最后一个。不认识的字段拒绝。
 
-- [ ] 带名称和一个点击步骤的文件载入后，名称、步骤顺序和定位器条件与文件一致
-- [ ] 没写名称时，名称是文件名去掉最后一个扩展名
-- [ ] 两个文件可以用同一个名称分别载入
-- [ ] 没有步骤的用例载入成功
-- [ ] 不认识的字段、缺少定位器、类型不对、重复键、只有 index、index 小于 1，都拒绝并带有文件与位置
-- [ ] 载入不修改文件
+- [x] 带名称和一个点击步骤的文件载入后，名称、步骤顺序和定位器条件与文件一致
+- [x] 没写名称时，名称是文件名去掉最后一个扩展名
+- [x] 两个文件可以用同一个名称分别载入
+- [x] 没有步骤的用例载入成功
+- [x] 不认识的字段、缺少定位器、类型不对、重复键、只有 index、index 小于 1，都拒绝并带有文件与位置
+- [x] 载入不修改文件
+
+## Comments
+
+Implemented on `main` at `92f6124`. Covered by `load.go` and `load_test.go`. The tracker has no separate closed triage role, so this uses `resolved`.
