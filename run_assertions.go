@@ -1,0 +1,158 @@
+package gnosis
+
+import (
+	"cmp"
+	"errors"
+	"fmt"
+	"image"
+	"math"
+	"slices"
+	"strings"
+	"time"
+)
+
+func (r *caseRun) assert(assertion *Assertion, onFalse Result) (Result, *frame, error) {
+	deadline := r.clock.Now().Add(assertion.Timeout)
+	for {
+		observation := &frame{device: r.device}
+		ok, err := checkAssertion(assertion, observation)
+		switch {
+		case err != nil:
+			return ResultError, observation, err
+		case ok:
+			return ResultPass, observation, nil
+		}
+		remaining := deadline.Sub(r.clock.Now())
+		if remaining <= 0 {
+			return onFalse, observation, nil
+		}
+		r.clock.Sleep(min(remaining, 500*time.Millisecond))
+	}
+}
+
+func checkAssertion(assertion *Assertion, observation *frame) (bool, error) {
+	switch {
+	case assertion.ScreenText != nil:
+		regions, err := observation.screenText()
+		if err != nil {
+			return false, err
+		}
+		return slices.ContainsFunc(regions, func(region TextRegion) bool {
+			return strings.Contains(region.Text, assertion.ScreenText.Text)
+		}), nil
+	case assertion.Exists != nil:
+		matches, err := locate(*assertion.Exists, observation, true)
+		return len(matches) > 0, err
+	case assertion.Absent != nil:
+		matches, err := locate(*assertion.Absent, observation, true)
+		return len(matches) == 0, err
+	case assertion.TextEquals != nil:
+		check := assertion.TextEquals
+		return anyTreeMatch(check.Locator, observation, func(e Element) bool {
+			return e.Text == check.Text
+		})
+	case assertion.TextContains != nil:
+		check := assertion.TextContains
+		return anyTreeMatch(check.Locator, observation, func(e Element) bool {
+			return strings.Contains(e.Text, check.Text)
+		})
+	case assertion.AttrEquals != nil:
+		check := assertion.AttrEquals
+		var attribute func(Element) *bool
+		switch check.Attribute {
+		case "enabled":
+			attribute = func(e Element) *bool { return e.Enabled }
+		case "checked":
+			attribute = func(e Element) *bool { return e.Checked }
+		default:
+			return false, fmt.Errorf("unsupported element attribute %q", check.Attribute)
+		}
+		return anyTreeMatch(check.Locator, observation, func(e Element) bool {
+			value := attribute(e)
+			return value != nil && *value == check.Value
+		})
+	default:
+		return false, errors.New("assertion has no check")
+	}
+}
+
+func anyTreeMatch(locator Locator, observation *frame, predicate func(Element) bool) (bool, error) {
+	matches, err := locate(locator, observation, false)
+	return slices.ContainsFunc(matches, predicate), err
+}
+
+func locateOne(locator Locator, observation *frame) (image.Point, error) {
+	matches, err := locate(locator, observation, true)
+	if err != nil {
+		return image.Point{}, err
+	}
+	if len(matches) != 1 {
+		return image.Point{}, fmt.Errorf("expected one matching element, found %d", len(matches))
+	}
+	bounds := matches[0].Bounds
+	if bounds.Empty() {
+		return image.Point{}, errors.New("matched element has no bounds")
+	}
+	return image.Pt(
+		int(math.Round((float64(bounds.Min.X)+float64(bounds.Max.X))/2)),
+		int(math.Round((float64(bounds.Min.Y)+float64(bounds.Max.Y))/2)),
+	), nil
+}
+
+func locate(locator Locator, observation *frame, allowScreenText bool) ([]Element, error) {
+	tree, err := observation.device.ControlTree()
+	if err != nil {
+		return nil, fmt.Errorf("read control tree: %w", err)
+	}
+	var matches []Element
+	for _, e := range tree {
+		if matchesField(locator.ID, e.ID) && matchesField(locator.Text, e.Text) &&
+			matchesField(locator.Description, e.Description) && matchesField(locator.Type, e.Type) {
+			matches = append(matches, e)
+		}
+	}
+	if len(matches) == 0 && allowScreenText && locator.Text != nil &&
+		locator.ID == nil && locator.Description == nil && locator.Type == nil {
+		regions, err := observation.screenText()
+		if err != nil {
+			return nil, err
+		}
+		for _, region := range regions {
+			if region.Text == *locator.Text {
+				matches = append(matches, Element{Bounds: region.Bounds})
+			}
+		}
+		sortScreenMatches(matches)
+	}
+	if locator.Index == 0 {
+		return matches, nil
+	}
+	if locator.Index < 1 || locator.Index > len(matches) {
+		return nil, nil
+	}
+	return matches[locator.Index-1 : locator.Index], nil
+}
+
+func matchesField(condition *string, value string) bool {
+	return condition == nil || *condition == value
+}
+
+func sortScreenMatches(matches []Element) {
+	slices.SortStableFunc(matches, func(a, b Element) int {
+		return cmp.Compare(a.Bounds.Min.Y, b.Bounds.Min.Y)
+	})
+	for first := 0; first < len(matches); {
+		bounds := matches[first].Bounds
+		// Different glyphs on one line can have slightly different top edges.
+		// Use the first box's vertical midpoint to keep those boxes together.
+		midpoint := bounds.Min.Y + bounds.Dy()/2
+		last := first + 1
+		for last < len(matches) && matches[last].Bounds.Min.Y <= midpoint {
+			last++
+		}
+		slices.SortStableFunc(matches[first:last], func(a, b Element) int {
+			return cmp.Compare(a.Bounds.Min.X, b.Bounds.Min.X)
+		})
+		first = last
+	}
+}
