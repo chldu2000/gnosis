@@ -1,6 +1,7 @@
 package gnosis
 
 import (
+	"bufio"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -123,6 +124,28 @@ func (a adbTransport) shell(command string) (string, error) {
 	defer conn.Close()
 	output, err := io.ReadAll(io.LimitReader(conn, 64<<10))
 	return strings.TrimSpace(string(output)), err
+}
+
+// startShell keeps the service alive on the original ADB stream. The command
+// prints its PID before replacing the shell with the service process.
+func (a adbTransport) startShell(command string) (net.Conn, int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := a.open(ctx, "shell:"+command, true)
+	if err != nil {
+		return nil, 0, err
+	}
+	output, err := bufio.NewReader(conn).ReadSlice('\n')
+	if err != nil {
+		conn.Close()
+		return nil, 0, fmt.Errorf("read process id: %w", err)
+	}
+	pid, err := parseAutomationPID(string(output))
+	if err != nil {
+		conn.Close()
+		return nil, 0, err
+	}
+	return conn, pid, nil
 }
 
 func (a adbTransport) push(target string, source io.Reader) error {

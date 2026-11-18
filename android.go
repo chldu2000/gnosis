@@ -12,6 +12,7 @@ import (
 	"image"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -34,14 +35,14 @@ const (
 // AndroidDevice uses an already running local ADB server and selects the
 // connected device by serial. Its operations are scoped to one Run at a time.
 type AndroidDevice struct {
-	adb               adbTransport
-	claim             *flock.Flock
-	http              *http.Client
-	assetsDir         string
-	ocr               androidOCR
-	restore           string
-	startedAutomation bool
-	automationPID     int
+	adb             adbTransport
+	claim           *flock.Flock
+	http            *http.Client
+	assetsDir       string
+	ocr             androidOCR
+	restore         string
+	automationShell net.Conn
+	automationPID   int
 }
 
 var _ Device = (*AndroidDevice)(nil)
@@ -106,12 +107,13 @@ func (d *AndroidDevice) TryOccupy() bool {
 func (d *AndroidDevice) Release() {
 	d.ocr.close()
 	d.restore = ""
-	if d.startedAutomation {
-		d.startedAutomation = false
+	if d.automationShell != nil {
 		// /stop only closes the HTTP listener; the JVM keeps its UiAutomation
 		// registration, so the process we started must be killed as well.
 		_, _ = d.automationGET("/stop")
 		d.killAutomation()
+		_ = d.automationShell.Close()
+		d.automationShell = nil
 	}
 	d.http.CloseIdleConnections()
 	_ = d.claim.Unlock()
@@ -127,7 +129,7 @@ func (d *AndroidDevice) killAutomation() {
 		return
 	}
 	_, _ = d.adb.shell(fmt.Sprintf(
-		"grep -q %s /proc/%d/cmdline && kill -9 %d", automationMainClass, pid, pid))
+		"tr '\\000' '\\n' < /proc/%d/cmdline | grep -Fxq %s && kill -9 %d", pid, automationMainClass, pid))
 }
 
 // parseAutomationPID reads the PID echoed by the launch command.
@@ -158,21 +160,16 @@ func (d *AndroidDevice) EnsureAutomation() error {
 			return fmt.Errorf("install uiautomator2: %v %s", err, output)
 		}
 	}
-	// setsid, when the device has it, moves the JVM out of the adb shell session
-	// so adbd does not reap it. nohup execs the JVM, so $! is its PID; the echo
-	// returns that PID to Gnosis, which is what Release later kills.
-	const launch = "S=$(command -v setsid); CLASSPATH=" + automationJar +
-		" ${S:+setsid} nohup app_process / " + automationMainClass + " -p 9008 </dev/null >/data/local/tmp/gnosis-uiautomator.log 2>&1 & echo $!"
-	output, err := d.adb.shell(launch)
-	if err != nil {
-		return fmt.Errorf("start uiautomator2: %w", err)
-	}
-	pid, err := parseAutomationPID(output)
+	// Keep the ADB stream open for the whole run. exec preserves the shell's
+	// PID and avoids starting a detached child that adbd can reap early.
+	const launch = "echo $$; CLASSPATH=" + automationJar +
+		" exec app_process / " + automationMainClass + " -p 9008 >/data/local/tmp/gnosis-uiautomator.log 2>&1"
+	conn, pid, err := d.adb.startShell(launch)
 	if err != nil {
 		return fmt.Errorf("start uiautomator2: %w", err)
 	}
 	d.automationPID = pid
-	d.startedAutomation = true
+	d.automationShell = conn
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if d.automationReady() {

@@ -49,7 +49,15 @@ func (d *AndroidDevice) command(operation, command string) (string, error) {
 		return "", fmt.Errorf("%s: uiautomator2 returned no result", operation)
 	}
 	if result.ReturnCode != 0 {
-		return "", fmt.Errorf("%s: Android exit %d: %s", operation, result.ReturnCode, strings.TrimSpace(result.Stderr))
+		detail := strings.TrimSpace(result.Stderr)
+		if detail == "" {
+			// Android's package manager may write installation failures to stdout.
+			detail = strings.TrimSpace(result.Stdout)
+		}
+		if detail == "" {
+			return "", fmt.Errorf("%s: Android exit %d", operation, result.ReturnCode)
+		}
+		return "", fmt.Errorf("%s: Android exit %d: %s", operation, result.ReturnCode, detail)
 	}
 	return strings.TrimSpace(result.Stdout), nil
 }

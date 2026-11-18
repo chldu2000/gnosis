@@ -7,7 +7,7 @@ Windows 上先准备本机 ADB 服务，将测试设备通过 USB 接入并允�
 | 文件 | 来源与用途 |
 | --- | --- |
 | `u2.jar` | [uiautomator2 JAR 0.4.0](https://github.com/openatx/android-uiautomator-server-jar/releases/tag/0.4.0)。运行时在设备上首次安装，供控件树、手势和截图使用。 |
-| `app-uiautomator.apk` | [AdbKeyboard 2.4.0](https://github.com/openatx/android-uiautomator-server/releases/tag/2.4.0)。首次替换文本时按需安装，执行结束后恢复原输入法。 |
+| `app-uiautomator.apk` | [AdbKeyboard 2.4.0](https://github.com/openatx/android-uiautomator-server/releases/tag/2.4.0)。首次替换文本时按需安装，执行结束后恢复原输入法。已安装的输入法可以直接使用。 |
 | `onnxruntime.dll` | [ONNX Runtime 1.23.2](https://www.nuget.org/packages/Microsoft.ML.OnnxRuntime/1.23.2)。取与程序架构一致的原生库，例如 NuGet 包中的 `runtimes/win-x64/native/onnxruntime.dll`。 |
 | `ch_PP-OCRv5_mobile_det.onnx` | [PP-OCRv5 中文移动检测模型](https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.4.0/onnx/PP-OCRv5/det/ch_PP-OCRv5_mobile_det.onnx)。 |
 | `ch_PP-OCRv5_rec_mobile_infer.onnx` | [PP-OCRv5 中文移动识别模型](https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.4.0/onnx/PP-OCRv5/rec/ch_PP-OCRv5_rec_mobile_infer.onnx)。 |
@@ -34,4 +34,8 @@ func executeAndroid(path, serial string) (*gnosis.RunRecord, error) {
 }
 ```
 
-`Run` 拒绝开始时返回错误和空记录。开始后返回执行记录，结果在 `record.Result`，操作错误在 `record.Error`，每步的结束图像在 `record.Steps[i].Screenshot`。同一 Windows 用户下，各 Gnosis 进程以设备序列号共享占用锁。设备端 JAR 和输入法会留在设备上。Gnosis 结束时先停止自己开启的 uiautomator2 监听，再按启动时回显的 PID 结束该进程（只在 `/proc/<pid>/cmdline` 仍是 uiautomator2 主类时才发送 KILL），以释放 UiAutomation 注册，下一次执行才能正常启动。
+`Run` 拒绝开始时返回错误和空记录。开始后返回执行记录，结果在 `record.Result`，操作错误在 `record.Error`，每步的结束图像在 `record.Steps[i].Screenshot`。同一 Windows 用户下，各 Gnosis 进程以设备序列号共享占用锁。
+
+Gnosis 启动 uiautomator2 后，在执行期间保持启动它的 ADB 连接。结束时先关闭监听，再核对启动时记录的 PID 和进程参数，结束自己启动的 JVM 并释放 UiAutomation。设备端 JAR 和输入法会保留。
+
+如果设备返回 `INSTALL_FAILED_USER_RESTRICTED`，输入步骤会停止，并在执行记录中保留系统提示。需要由设备使用者按系统要求授权安装，或在已经安装 AdbKeyboard 的设备上运行输入步骤。
