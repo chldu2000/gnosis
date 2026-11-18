@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +26,9 @@ const (
 	automationJar = "/data/local/tmp/u2.jar"
 	imeAPK        = "/data/local/tmp/gnosis-uiautomator-ime.apk"
 	automationIME = "com.github.uiautomator/.AdbKeyboard"
+	// automationMainClass is the uiautomator2 JVM entry point; it also marks
+	// the process in /proc/<pid>/cmdline before Gnosis kills it.
+	automationMainClass = "com.wetest.uia2.Main"
 )
 
 // AndroidDevice uses an already running local ADB server and selects the
@@ -37,6 +41,7 @@ type AndroidDevice struct {
 	ocr               androidOCR
 	restore           string
 	startedAutomation bool
+	automationPID     int
 }
 
 var _ Device = (*AndroidDevice)(nil)
@@ -103,11 +108,35 @@ func (d *AndroidDevice) Release() {
 	d.restore = ""
 	if d.startedAutomation {
 		d.startedAutomation = false
-		// Stop our listener while keeping the installed jar and keyboard.
+		// /stop only closes the HTTP listener; the JVM keeps its UiAutomation
+		// registration, so the process we started must be killed as well.
 		_, _ = d.automationGET("/stop")
+		d.killAutomation()
 	}
 	d.http.CloseIdleConnections()
 	_ = d.claim.Unlock()
+}
+
+// killAutomation kills the uiautomator2 JVM this device started. The PID is
+// only signalled while /proc still shows the uiautomator2 main class, so a
+// recycled PID is left alone. The installed jar and keyboard are kept.
+func (d *AndroidDevice) killAutomation() {
+	pid := d.automationPID
+	d.automationPID = 0
+	if pid <= 0 {
+		return
+	}
+	_, _ = d.adb.shell(fmt.Sprintf(
+		"grep -q %s /proc/%d/cmdline && kill -9 %d", automationMainClass, pid, pid))
+}
+
+// parseAutomationPID reads the PID echoed by the launch command.
+func parseAutomationPID(output string) (int, error) {
+	pid, err := strconv.Atoi(strings.TrimSpace(output))
+	if err != nil || pid <= 0 {
+		return 0, fmt.Errorf("uiautomator2 did not report a process id: %q", output)
+	}
+	return pid, nil
 }
 
 func (d *AndroidDevice) EnsureAutomation() error {
@@ -129,10 +158,20 @@ func (d *AndroidDevice) EnsureAutomation() error {
 			return fmt.Errorf("install uiautomator2: %v %s", err, output)
 		}
 	}
-	const launch = "CLASSPATH=" + automationJar + " nohup app_process / com.wetest.uia2.Main -p 9008 </dev/null >/data/local/tmp/gnosis-uiautomator.log 2>&1 &"
-	if _, err := d.adb.shell(launch); err != nil {
+	// setsid, when the device has it, moves the JVM out of the adb shell session
+	// so adbd does not reap it. nohup execs the JVM, so $! is its PID; the echo
+	// returns that PID to Gnosis, which is what Release later kills.
+	const launch = "S=$(command -v setsid); CLASSPATH=" + automationJar +
+		" ${S:+setsid} nohup app_process / " + automationMainClass + " -p 9008 </dev/null >/data/local/tmp/gnosis-uiautomator.log 2>&1 & echo $!"
+	output, err := d.adb.shell(launch)
+	if err != nil {
 		return fmt.Errorf("start uiautomator2: %w", err)
 	}
+	pid, err := parseAutomationPID(output)
+	if err != nil {
+		return fmt.Errorf("start uiautomator2: %w", err)
+	}
+	d.automationPID = pid
 	d.startedAutomation = true
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {

@@ -34,4 +34,4 @@ func executeAndroid(path, serial string) (*gnosis.RunRecord, error) {
 }
 ```
 
-`Run` 拒绝开始时返回错误和空记录。开始后返回执行记录，结果在 `record.Result`，操作错误在 `record.Error`，每步的结束图像在 `record.Steps[i].Screenshot`。同一 Windows 用户下，各 Gnosis 进程以设备序列号共享占用锁。设备端 JAR 和输入法会留在设备上。Gnosis 结束时停止自己开启的 uiautomator2 监听。
+`Run` 拒绝开始时返回错误和空记录。开始后返回执行记录，结果在 `record.Result`，操作错误在 `record.Error`，每步的结束图像在 `record.Steps[i].Screenshot`。同一 Windows 用户下，各 Gnosis 进程以设备序列号共享占用锁。设备端 JAR 和输入法会留在设备上。Gnosis 结束时先停止自己开启的 uiautomator2 监听，再按启动时回显的 PID 结束该进程（只在 `/proc/<pid>/cmdline` 仍是 uiautomator2 主类时才发送 KILL），以释放 UiAutomation 注册，下一次执行才能正常启动。
