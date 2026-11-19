@@ -4,6 +4,7 @@ package assetform
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ type Document struct {
 	path     string
 	root     *yaml.Node
 	original []byte
+	digest   [sha256.Size]byte
 	dirty    bool
 	suite    bool
 }
@@ -54,7 +56,7 @@ func Open(path string) (*Document, error) {
 	if len(root.Content) != 1 || root.Content[0].Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("%s: expected a case or suite mapping", path)
 	}
-	doc := &Document{path: path, root: &root, original: data}
+	doc := &Document{path: path, root: &root, original: data, digest: sha256.Sum256(data)}
 	doc.suite = child(doc.mapping(), "cases") != nil
 	return doc, nil
 }
@@ -71,6 +73,13 @@ func (d *Document) Path() string        { return d.path }
 func (d *Document) Dirty() bool         { return d.dirty }
 func (d *Document) Suite() bool         { return d.suite }
 func (d *Document) mapping() *yaml.Node { return d.root.Content[0] }
+
+func (d *Document) RefersTo(path string) bool { return samePath(d.path, path) }
+
+// MatchesSavedVersion reports whether the editor still represents the loaded file version.
+func (d *Document) MatchesSavedVersion(digest [sha256.Size]byte) bool {
+	return d.path != "" && !d.dirty && d.digest == digest
+}
 
 func (d *Document) Name() string  { return value(d.mapping(), "name") }
 func (d *Document) HasName() bool { return child(d.mapping(), "name") != nil }
@@ -286,6 +295,7 @@ func (d *Document) Save(destination string) error {
 		return err
 	}
 	d.root, d.path, d.original, d.dirty = root, destination, data, false
+	d.digest = sha256.Sum256(data)
 	return nil
 }
 

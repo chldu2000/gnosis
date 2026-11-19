@@ -15,7 +15,6 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"gnosis"
-	"gnosis/internal/assetform"
 	"gnosis/internal/localrun"
 )
 
@@ -25,25 +24,44 @@ type desktop struct {
 	window *mygo.Window
 	client *localrun.Client
 	ctx    context.Context
-	page   string
-	doc    *assetform.Document
-	row    int
+	width  int
+	retry  chan struct{}
+
+	doc       *openedDocument
+	documents []*openedDocument
+	nextDocID int
+	filesOpen bool
+	modelOpen bool
 
 	snapshot        localrun.Snapshot
 	connected       bool
+	connecting      bool
 	connectionError string
+	connectionEpoch uint64
 	devices         []gnosis.DeviceInfo
 	deviceID        string
+	deviceName      string
 	deviceError     string
 	refreshing      bool
 	commandBusy     bool
-	pending         string
+	pending         *pendingStart
 	autoOpen        string
+	runProblem      string
 
-	model   localrun.ModelSummary
-	secret  string
-	message string
-	problem string
+	model        localrun.ModelSummary
+	secret       string
+	modelNote    string
+	modelProblem string
+	message      string
+	problem      string
+}
+
+type pendingStart struct {
+	request   localrun.StartRequest
+	title     string
+	checked   bool
+	checking  bool
+	checkNote string
 }
 
 func main() {
@@ -60,15 +78,21 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	defer client.Close()
-	app := &desktop{ctx: ctx, client: client, page: "edit", row: -1}
+	app := &desktop{ctx: ctx, client: client, width: 1040, retry: make(chan struct{}, 1)}
 	mygo.App.WhenReady(func() {
 		app.window = mygo.NewWindow(mygo.WindowOptions{
 			Title: windowTitle, Width: 1040, Height: 740, MinWidth: 760, MinHeight: 540,
 			Content: ui.View(app.view),
 		})
 		app.window.OnClose(func(event *mygo.CloseEvent) {
-			if !app.canDiscard() {
+			if !app.canCloseWindow() {
 				event.PreventDefault()
+			}
+		})
+		app.window.OnResize(func() {
+			width, _ := app.window.ContentSize()
+			if width > 0 && width != app.width {
+				app.window.Update(func() { app.width = width })
 			}
 		})
 		app.window.OnClosed(cancel)
@@ -80,7 +104,7 @@ func main() {
 			settings, err := localrun.ModelSettings()
 			app.window.Update(func() {
 				if err != nil {
-					app.showError(err)
+					app.modelProblem = err.Error()
 					return
 				}
 				app.model = settings
@@ -99,6 +123,7 @@ func (a *desktop) observe() {
 		var next localrun.Snapshot
 		var err error
 		if !connected {
+			a.window.Update(func() { a.connecting = true })
 			ctx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
 			next, err = a.client.Connect(ctx)
 			cancel()
@@ -123,26 +148,46 @@ func (a *desktop) observe() {
 			}
 			connected = false
 			a.window.Update(func() {
+				if a.connected {
+					a.connectionEpoch++
+				}
 				a.connected = false
+				a.connecting = false
 				a.connectionError = err.Error()
 			})
-			if !delay(a.ctx, 700*time.Millisecond) {
+			if !a.waitToReconnect() {
 				return
 			}
 			continue
 		}
+		previousID := snapshot.ID
 		snapshot = next
 		a.window.Update(func() {
-			if !a.connected {
-				a.connected = true
-				a.connectionError = ""
-				if a.page == "run" {
-					a.refreshDevices()
-				}
+			reconnected := !a.connected
+			a.connected, a.connecting, a.connectionError = true, false, ""
+			// A command can publish a new execution while a poll of the previous one is in flight.
+			if next.ID != previousID || a.snapshot.ID == "" || a.snapshot.ID == previousID {
+				a.applySnapshot(next)
 			}
-			a.applySnapshot(next)
+			if reconnected {
+				a.refreshDevices()
+				a.checkRequest()
+			}
 		})
 		connected = true
+	}
+}
+
+func (a *desktop) waitToReconnect() bool {
+	timer := time.NewTimer(700 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-a.ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	case <-a.retry:
+		return true
 	}
 }
 
@@ -161,13 +206,9 @@ func (a *desktop) applySnapshot(value localrun.Snapshot) {
 	if value.ID == "" || (value.ID == a.snapshot.ID && value.Progress.Sequence < a.snapshot.Progress.Sequence) {
 		return
 	}
-	if a.snapshot.ID == "" && a.doc == nil {
-		a.page = "run"
-		a.refreshDevices()
-	}
 	a.snapshot = value
-	if a.pending != "" && value.Request.RequestID == a.pending {
-		a.pending, a.problem = "", ""
+	if a.pending != nil && value.Request.RequestID == a.pending.request.RequestID {
+		a.pending, a.runProblem = nil, ""
 	}
 	if value.Request.RequestID == a.autoOpen && !value.Active() {
 		a.autoOpen = ""
@@ -182,44 +223,69 @@ func (a *desktop) refreshDevices() {
 		return
 	}
 	a.refreshing = true
+	epoch := a.connectionEpoch
 	go func() {
 		ctx, cancel := context.WithTimeout(a.ctx, 4*time.Second)
 		defer cancel()
 		devices, err := a.client.Devices(ctx)
 		a.window.Update(func() {
 			a.refreshing = false
-			a.devices = devices
+			if !a.connected || epoch != a.connectionEpoch {
+				a.refreshDevices()
+				return
+			}
 			a.deviceError = ""
 			if err != nil {
 				a.deviceError = "无法读取设备列表：" + err.Error()
+				return
 			}
+			a.devices = devices
 		})
 	}()
 }
 
 func (a *desktop) selectedOnline() bool {
-	return slices.ContainsFunc(a.devices, func(device gnosis.DeviceInfo) bool {
+	return a.deviceError == "" && slices.ContainsFunc(a.devices, func(device gnosis.DeviceInfo) bool {
 		return device.ID == a.deviceID && device.State == "device"
 	})
 }
 
+func (a *desktop) canStart() bool {
+	return a.connected && !a.refreshing && !a.commandBusy && !a.snapshot.Active() &&
+		a.doc != nil && (!a.doc.Suite() || a.doc.Rows() > 0) &&
+		a.selectedOnline() && (a.pending == nil || a.pending.checked)
+}
+
 func (a *desktop) start() {
-	if a.commandBusy || !a.connected || !a.selectedOnline() || a.doc == nil || a.snapshot.Active() {
+	if !a.canStart() {
 		return
 	}
-	if a.pending != "" && !a.confirm("启动待确认", "上一次启动是否被接受仍无法确认。是否明确发起一次新的执行？", "新建执行") {
-		return
+	if pending := a.pending; pending != nil {
+		path := a.doc.Path()
+		if path == "" {
+			path = "保存后使用所选路径"
+		}
+		message := fmt.Sprintf("上一次请求仍待确认\n%s · %s\n%s\n\n这次准备执行\n%s · %s\n%s\n\n执行进程会检查设备是否被占用。",
+			pending.title, pending.request.DeviceID, pending.request.Path, documentTitle(a.doc), a.selectedDeviceLabel(), path)
+		if !a.confirm("发起一次新的执行？", message, "确认发起新执行") || !a.canStart() {
+			return
+		}
 	}
 	if a.doc.Dirty() && (!a.confirm("保存后执行", "将保存当前编辑，再执行校验通过的文件。", "保存并执行") || !a.saveAsset(false)) {
 		return
 	}
+	if !a.canStart() {
+		return
+	}
 	if _, _, err := gnosis.Load(a.doc.Path()); err != nil {
-		a.showError(err)
+		a.runProblem = err.Error()
 		return
 	}
 	request := localrun.StartRequest{RequestID: rand.Text(), Path: a.doc.Path(), DeviceID: a.deviceID}
+	title := documentTitle(a.doc)
+	priorAutoOpen := a.autoOpen
 	a.commandBusy, a.autoOpen = true, request.RequestID
-	a.problem, a.message = "", ""
+	a.runProblem = ""
 	go func() {
 		ctx, cancel := context.WithTimeout(a.ctx, 8*time.Second)
 		snapshot, err := a.client.Start(ctx, request)
@@ -239,14 +305,17 @@ func (a *desktop) start() {
 			a.commandBusy = false
 			switch {
 			case unknown:
-				a.pending = request.RequestID
-				a.problem = "启动待确认。可以核对请求，或明确发起新的执行。"
+				if a.snapshot.Request.RequestID != request.RequestID {
+					a.pending = &pendingStart{request: request, title: title}
+				}
 			case err != nil:
-				a.autoOpen = ""
-				a.showError(err)
+				if a.autoOpen == request.RequestID {
+					a.autoOpen = priorAutoOpen
+				}
+				a.runProblem = err.Error()
 				a.refreshDevices()
 			default:
-				a.pending = ""
+				a.pending = nil
 				a.applySnapshot(snapshot)
 			}
 		})
@@ -254,29 +323,41 @@ func (a *desktop) start() {
 }
 
 func (a *desktop) checkRequest() {
-	request := a.pending
-	if request == "" || a.commandBusy {
+	pending := a.pending
+	if pending == nil || a.commandBusy || !a.connected {
 		return
 	}
-	a.commandBusy = true
+	a.commandBusy, pending.checking = true, true
+	pending.checkNote = ""
 	go func() {
 		ctx, cancel := context.WithTimeout(a.ctx, 4*time.Second)
 		defer cancel()
-		snapshot, err := a.client.Get(ctx, "", request)
+		snapshot, err := a.client.Get(ctx, "", pending.request.RequestID)
 		a.window.Update(func() {
 			a.commandBusy = false
-			if err != nil {
-				a.problem = "启动待确认。仍无法核实上一次请求。"
+			if a.pending != pending {
 				return
 			}
-			a.applySnapshot(snapshot)
+			pending.checking = false
+			switch {
+			case errors.Is(err, localrun.ErrUnknownExecution):
+				pending.checked = true
+			case err != nil:
+				pending.checkNote = "暂时无法核对，请在连接恢复后重试。"
+			case snapshot.Request.RequestID == pending.request.RequestID:
+				a.applySnapshot(snapshot)
+			}
 		})
 	}()
 }
 
 func (a *desktop) control(command string) {
+	if !a.connected || a.commandBusy || !a.snapshot.Active() {
+		return
+	}
 	id := a.snapshot.ID
 	a.commandBusy = true
+	a.runProblem = ""
 	go func() {
 		ctx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
 		defer cancel()
@@ -284,7 +365,7 @@ func (a *desktop) control(command string) {
 		a.window.Update(func() {
 			a.commandBusy = false
 			if err != nil {
-				a.showError(err)
+				a.runProblem = err.Error()
 				return
 			}
 			a.applySnapshot(snapshot)
@@ -294,11 +375,11 @@ func (a *desktop) control(command string) {
 
 func (a *desktop) openReport(path string) {
 	if !filepath.IsAbs(path) || filepath.Ext(path) != ".html" {
-		a.showError(fmt.Errorf("无法识别报告路径 %q", path))
+		a.runProblem = fmt.Sprintf("无法识别报告路径 %q", path)
 		return
 	}
 	if err := mygo.Shell.OpenPath(path); err != nil {
-		a.showError(err)
+		a.runProblem = err.Error()
 	}
 }
 

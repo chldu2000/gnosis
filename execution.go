@@ -27,6 +27,8 @@ type CaseProgress struct {
 	Result     Result
 	ReportPath string
 	Diagnostic string
+	FailedStep int    `json:",omitempty"`
+	StepName   string `json:",omitempty"`
 }
 
 // ExecutionProgress contains public diagnostics and report paths. Images and

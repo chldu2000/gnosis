@@ -2,6 +2,7 @@ package localrun
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,6 +12,45 @@ import (
 
 	"gnosis"
 )
+
+func TestManagerSnapshotsLoadedSuiteSourcesInReferenceOrder(t *testing.T) {
+	config, first, _ := fixture(t)
+	dir := filepath.Dir(first)
+	second := filepath.Join(dir, "other.yaml")
+	secondYAML := []byte("name: wait\nsteps: []\n")
+	if err := os.WriteFile(second, secondYAML, 0600); err != nil {
+		t.Fatal(err)
+	}
+	suite := filepath.Join(dir, "suite.yaml")
+	if err := os.WriteFile(suite, []byte("cases: [wait.yaml, other.yaml, wait.yaml]\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := OpenManager(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := m.Start(StartRequest{RequestID: "suite-request", Path: suite, DeviceID: "fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = m.Control(accepted.ID, "cancel")
+		await(t, m, accepted.ID, func(s Snapshot) bool { return !s.Active() })
+	})
+	sources := accepted.CaseSources
+	if !accepted.Suite || len(sources) != 3 || sources[0].Path != first || sources[0] != sources[2] ||
+		sources[1].Path != second || sources[1].Name != sources[0].Name || sources[1].Digest != sha256.Sum256(secondYAML) ||
+		sources[0].Steps != 1 || sources[1].Steps != 0 {
+		t.Fatalf("suite sources: %+v", sources)
+	}
+	if err := os.WriteFile(second, []byte("name: changed\nsteps: []\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := m.Get(accepted.ID, "")
+	if err != nil || len(snapshot.CaseSources) != 3 || snapshot.CaseSources[1] != sources[1] {
+		t.Fatalf("the source changed after loading: %+v, %v", snapshot.CaseSources, err)
+	}
+}
 
 type fakeDevice struct {
 	gnosis.Device

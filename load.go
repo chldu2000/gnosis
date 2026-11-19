@@ -2,6 +2,7 @@ package gnosis
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"math"
@@ -162,9 +163,32 @@ func (r *Rejection) Error() string {
 
 type loadSettings struct {
 	reportDirectory string
+	caseSources     *[]CaseSource
 }
 
 type LoadOption func(*loadSettings)
+
+// CaseSource identifies the exact file and version loaded for a case.
+type CaseSource struct {
+	Path   string
+	Digest [sha256.Size]byte
+	Name   string
+	Steps  int
+}
+
+// WithCaseSources reports sources in execution order after a successful load.
+// Repeated suite entries are reported separately.
+func WithCaseSources(destination *[]CaseSource) LoadOption {
+	return func(settings *loadSettings) { settings.caseSources = destination }
+}
+
+func (settings loadSettings) recordCase(path string, data []byte, loaded Case) {
+	if settings.caseSources != nil {
+		*settings.caseSources = append(*settings.caseSources, CaseSource{
+			Path: path, Digest: sha256.Sum256(data), Name: loaded.Name, Steps: len(loaded.Steps),
+		})
+	}
+}
 
 // Load reads the case or suite file at path. A file with cases is a suite.
 // A file with name or steps is a case. It does not modify any file.
@@ -174,11 +198,20 @@ func Load(path string, options ...LoadOption) (Case, *Suite, error) {
 	for _, option := range options {
 		option(&settings)
 	}
+	destination := settings.caseSources
+	var sources []CaseSource
+	if destination != nil {
+		settings.caseSources = &sources
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Case{}, nil, &Rejection{File: path, Line: 0, Column: 0, Reason: "cannot read file"}
 	}
-	return loadData(path, data, settings)
+	loaded, suite, err := loadData(path, data, settings)
+	if err == nil && destination != nil {
+		*destination = sources
+	}
+	return loaded, suite, err
 }
 
 // ValidateAsset applies the usual loader rules to an editor's proposed file
@@ -199,6 +232,9 @@ func loadData(path string, data []byte, settings loadSettings) (Case, *Suite, er
 	}
 	if err := settings.checkReportLocation(path); err != nil {
 		return Case{}, nil, err
+	}
+	if suite == nil {
+		settings.recordCase(path, data, loaded)
 	}
 	return loaded, suite, nil
 }
@@ -1309,6 +1345,7 @@ func loadReferencedCase(suitePath string, reference int, item *yaml.Node, settin
 			Reason: err.Error(),
 		})
 	}
+	settings.recordCase(casePath, data, loaded)
 	return loaded, nil
 }
 

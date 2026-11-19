@@ -26,10 +26,11 @@ type StartRequest struct {
 }
 
 type Snapshot struct {
-	ID       string
-	Request  StartRequest
-	Suite    bool
-	Progress gnosis.ExecutionProgress
+	ID          string
+	Request     StartRequest
+	Suite       bool
+	Progress    gnosis.ExecutionProgress
+	CaseSources []gnosis.CaseSource `json:",omitempty"`
 }
 
 func (s Snapshot) Active() bool {
@@ -119,7 +120,8 @@ func (m *Manager) Start(request StartRequest) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	testCase, suite, err := gnosis.Load(path, gnosis.ReportsOutsideCaseTree(m.config.ReportDir))
+	var sources []gnosis.CaseSource
+	testCase, suite, err := gnosis.Load(path, gnosis.ReportsOutsideCaseTree(m.config.ReportDir), gnosis.WithCaseSources(&sources))
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -132,7 +134,7 @@ func (m *Manager) Start(request StartRequest) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	control := gnosis.NewExecutionControl(m.config.PauseLimit)
-	initial := Snapshot{ID: rand.Text(), Request: request, Suite: suite != nil, Progress: control.Snapshot()}
+	initial := Snapshot{ID: rand.Text(), Request: request, Suite: suite != nil, Progress: control.Snapshot(), CaseSources: sources}
 	type response struct {
 		snapshot Snapshot
 		err      error

@@ -97,5 +97,9 @@ func publishCase(control *ExecutionControl, record *RunRecord) {
 		if record.Error != nil {
 			item.Diagnostic = record.Error.Error()
 		}
+		if (record.Result == ResultFail || record.Result == ResultBlocked) && len(record.Steps) > 0 {
+			item.FailedStep = len(record.Steps)
+			item.StepName = record.Steps[item.FailedStep-1].Name
+		}
 	})
 }

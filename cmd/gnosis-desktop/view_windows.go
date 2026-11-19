@@ -4,162 +4,299 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/egoist/mygo/ui"
-	"gnosis"
 	"gnosis/internal/assetform"
 )
 
+const filesBreakpoint = 980
+
 func (a *desktop) view(c *ui.Context) {
-	ui.Column(c).Fill().Padding(20).Gap(14).Children(func() {
-		ui.Row(c).Gap(10).Children(func() {
-			ui.Text(c, "Gnosis").FontSize(24).Bold().Grow(1)
-			a.tab(c, "edit", "用例与套件")
-			a.tab(c, "run", "执行")
-			a.tab(c, "model", "模型设置")
+	wide := a.width >= filesBreakpoint
+	theme := c.Theme()
+	canvas, panel, files := theme.Background, theme.Surface, theme.Surface
+	if !theme.Dark {
+		canvas, panel, files = ui.Hex("#f1f5f8"), ui.Hex("#ffffff"), ui.Hex("#eaf0f5")
+	}
+	ui.Column(c).Fill().Background(canvas).Children(func() {
+		ui.Row(c.Key("header")).FillWidth().Padding(9, 15).Gap(10).AlignItems(ui.Center).Background(panel).Children(func() {
+			ui.Text(c, "Gnosis").FontSize(23).Bold().Grow(1)
+			ui.Text(c, a.connectionLabel()).FontSize(12).TextColor(theme.TextMuted)
+			if ui.Button(c, "模型设置").Clicked() {
+				a.modelOpen = true
+			}
 		})
-		if a.problem != "" {
-			ui.Text(c, a.problem).Wrap().TextColor(ui.Hex("#b44632"))
-		} else if a.message != "" {
-			ui.Text(c, a.message).Wrap()
-		}
-		switch a.page {
-		case "run":
-			a.runView(c)
-		case "model":
-			a.modelView(c)
-		default:
-			a.editorView(c)
-		}
+		ui.Divider(c)
+		ui.Row(c.Key("workbench")).Grow(1).MinHeight(0).FillWidth().AlignItems(ui.Stretch).Gap(12).Padding(10, 12).Children(func() {
+			if wide {
+				ui.Column(c.Key("files")).Width(174).MinHeight(0).Padding(9).Gap(9).
+					Background(files).Border(1, theme.Border).Radius(5).Children(func() {
+					a.filesView(c)
+				})
+			}
+			ui.Column(c.Key("editor")).Grow(1).MinWidth(0).MinHeight(0).Gap(8).Children(func() {
+				a.editorView(c, wide, panel)
+			})
+			ui.Column(c.Key("execution")).Width(280).MinHeight(0).Padding(10).Gap(8).
+				Background(panel).Border(1, theme.Border).Radius(5).Children(func() {
+				a.runView(c)
+			})
+		})
+		ui.Modal(c.Key("files-dialog"), &a.filesOpen, func() {
+			ui.Column(c).Width(355).Height(360).Padding(12).Gap(8).Children(func() {
+				a.filesView(c)
+				if ui.Button(c, "关闭").Clicked() {
+					a.filesOpen = false
+				}
+			})
+		})
+		ui.Modal(c.Key("model-dialog"), &a.modelOpen, func() {
+			ui.Column(c).Width(460).Padding(14).Gap(8).Children(func() {
+				ui.Text(c, "模型设置").FontSize(18).Bold()
+				a.modelView(c)
+				if ui.Button(c, "关闭").Clicked() {
+					a.modelOpen = false
+					a.secret = ""
+				}
+			})
+		})
 	})
-}
-
-func (a *desktop) tab(c *ui.Context, page, label string) {
-	if a.page == page {
-		ui.PrimaryButton(c, label)
-		return
+	if !a.modelOpen {
+		a.secret = ""
 	}
-	if ui.Button(c, label).Clicked() {
-		a.page, a.message = page, ""
-		if page == "run" {
-			a.refreshDevices()
-		}
+	if a.doc != nil && !a.filesOpen && !a.modelOpen && c.Shortcut(ui.Ctrl, ui.KeyS) {
+		a.saveAsset(false)
 	}
 }
 
-func (a *desktop) editorView(c *ui.Context) {
-	ui.Row(c).Gap(8).Children(func() {
-		if ui.PrimaryButton(c, "打开 YAML").Clicked() {
-			a.pickAsset()
-		}
-		if ui.Button(c, "新建用例").Clicked() {
+func (a *desktop) filesView(c *ui.Context) {
+	ui.Text(c, "用例与套件").FontSize(16).Bold()
+	if ui.Button(c, "打开 YAML").FillWidth().Clicked() {
+		a.pickAsset()
+	}
+	ui.Row(c).Gap(4).Children(func() {
+		if ui.Button(c, "新建用例").Padding(6, 4).Grow(1).Clicked() {
 			a.newAsset(false)
 		}
-		if ui.Button(c, "新建套件").Clicked() {
+		if ui.Button(c, "新建套件").Padding(6, 4).Grow(1).Clicked() {
 			a.newAsset(true)
 		}
-		if a.doc != nil {
-			if ui.Button(c, "保存").Clicked() {
-				a.saveAsset(false)
-			}
-			if ui.Button(c, "另存为").Clicked() {
-				a.saveAsset(true)
-			}
-			if ui.Button(c, "重新载入").Disabled(a.doc.Path() == "").Clicked() && a.canDiscard() {
-				a.loadAsset(a.doc.Path())
-			}
-		}
 	})
-	if a.doc == nil {
+	ui.Scroll(c.Key("opened-files")).Grow(1).MinHeight(0).FillWidth().Children(func() {
+		ui.Column(c).FillWidth().Gap(6).Children(func() {
+			for _, group := range []struct {
+				label string
+				suite bool
+			}{{"用例", false}, {"套件", true}} {
+				ui.Text(c.Key(group.label), group.label).FontSize(12).TextColor(c.Theme().TextMuted)
+				for _, doc := range a.documents {
+					if group.suite != doc.Suite() {
+						continue
+					}
+					title := documentTitle(doc)
+					if doc.Dirty() {
+						title += " · 未保存"
+					}
+					var button ui.Element
+					if doc == a.doc {
+						button = ui.PrimaryButton(c.Key(doc.id), title)
+					} else {
+						button = ui.Button(c.Key(doc.id), title)
+					}
+					if button.FillWidth().Tooltip(doc.Path()).Clicked() {
+						a.selectDocument(doc)
+					}
+				}
+			}
+		})
+	})
+}
+
+func (a *desktop) editorView(c *ui.Context, wide bool, panel ui.Color) {
+	doc := a.doc
+	if !wide {
+		if ui.Button(c.Key("file-picker"), "用例与套件").Clicked() {
+			a.filesOpen = true
+		}
+	}
+	if doc == nil {
 		ui.Text(c, "打开现有用例或套件，或创建一个新文件。").Wrap()
+		a.editorMessage(c)
 		return
 	}
-	label := "未命名用例"
-	if a.doc.Suite() {
-		label = "未命名套件"
+	ui.Text(c.Key("document-title"), documentTitle(doc)).FontSize(23).Bold().Wrap()
+	label := doc.Path()
+	if label == "" {
+		label = "未保存到磁盘"
+	} else if doc.Dirty() {
+		label += " · 未保存"
 	}
-	if a.doc.Path() != "" {
-		label = a.doc.Path()
-	}
-	if a.doc.Dirty() {
-		label += "  ·  未保存"
-	}
-	ui.Text(c, label).Wrap()
-	if !a.doc.Suite() {
-		ui.Row(c).Gap(8).Children(func() {
-			name := a.doc.Name()
-			if ui.TextInput(c.Key("case-name"), &name).Label("用例名称").Placeholder("用例名称").Width(360).Changed() {
-				a.doc.SetName(name)
-			}
-			if a.doc.HasName() && ui.Button(c, "使用文件名").Clicked() {
-				a.doc.ClearName()
-			} else if !a.doc.HasName() && ui.Button(c, "设为空名称").Clicked() {
-				a.doc.SetName("")
-			}
-		})
-	}
-	ui.Row(c).Grow(1).Gap(16).Children(func() {
-		ui.Column(c).Width(300).MinHeight(0).Gap(8).Children(func() { a.editRows(c) })
-		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-			if a.row >= 0 && a.row < a.doc.Rows() && !a.doc.Suite() {
-				a.stepFields(c)
-			}
-		})
+	ui.Text(c.Key("document-path"), label).FontSize(12).Wrap().TextColor(c.Theme().TextMuted)
+	ui.Row(c.Key("document-actions")).Gap(5).Children(func() {
+		if ui.Button(c, "保存").Tooltip("Ctrl+S").Clicked() {
+			a.saveAsset(false)
+		}
+		if ui.Button(c, "另存为").Clicked() {
+			a.saveAsset(true)
+		}
+		if ui.Button(c, "重新载入").Disabled(doc.Path() == "").Clicked() {
+			a.reloadAsset()
+		}
+		if ui.Button(c, "关闭文件").Clicked() {
+			a.closeDocument()
+		}
 	})
+	if a.doc != doc {
+		return
+	}
+	a.editorMessage(c)
+	theme := c.Theme()
+	contents := c.Key(doc.id)
+	if wide {
+		ui.Row(contents).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Gap(8).Children(func() {
+			ui.Column(c.Key("steps")).Width(188).MinHeight(0).Gap(5).Children(func() { a.editRows(c) })
+			ui.Scroll(c.Key("fields")).Grow(1).MinWidth(0).MinHeight(0).
+				Background(panel).Border(1, theme.Border).Radius(5).Children(func() { a.inspector(c) })
+		})
+		return
+	}
+	ui.Column(contents).Grow(1).MinHeight(0).Gap(8).Children(func() {
+		ui.Column(c.Key("steps")).Grow(1).MinHeight(0).Gap(5).Children(func() { a.editRows(c) })
+		ui.Scroll(c.Key("fields")).Grow(2).MinHeight(0).FillWidth().
+			Background(panel).Border(1, theme.Border).Radius(5).Children(func() { a.inspector(c) })
+	})
+}
+
+func (a *desktop) editorMessage(c *ui.Context) {
+	if a.problem != "" {
+		ui.Text(c.Key("editor-error"), a.problem).Wrap().TextColor(c.Theme().Danger)
+	} else if a.message != "" {
+		ui.Text(c.Key("editor-message"), a.message).Wrap().TextColor(c.Theme().TextMuted)
+	}
+}
+
+func (a *desktop) inspector(c *ui.Context) {
+	doc := a.doc
+	ui.Column(c).FillWidth().Padding(9).Gap(8).Children(func() {
+		if !doc.Suite() {
+			ui.Text(c, "用例名称").Bold()
+			ui.Row(c).Gap(5).Children(func() {
+				name := doc.Name()
+				if ui.TextInput(c.Key("case-name"), &name).Label("用例名称").Placeholder("使用文件名").Grow(1).MinWidth(0).Changed() {
+					doc.SetName(name)
+				}
+				if doc.HasName() && ui.Button(c, "使用文件名").Clicked() {
+					doc.ClearName()
+				} else if !doc.HasName() && ui.Button(c, "设为空名称").Clicked() {
+					doc.SetName("")
+				}
+			})
+		}
+		if doc.row < 0 || doc.row >= doc.Rows() {
+			ui.Text(c, "选择列表中的条目查看详情。").FontSize(12).Wrap()
+			return
+		}
+		ui.Divider(c)
+		ui.Text(c, fmt.Sprintf("%d. %s", doc.row+1, rowTitle(doc, doc.row))).Bold().Wrap()
+		if doc.Suite() {
+			ref := doc.Reference(doc.row)
+			ui.Text(c, ref).Wrap()
+			if doc.Path() != "" && ui.Button(c, "打开用例").Clicked() {
+				a.loadAsset(filepath.Join(filepath.Dir(doc.Path()), filepath.FromSlash(ref)))
+			}
+		} else {
+			a.stepFields(c)
+		}
+		a.editRowActions(c, doc)
+	})
+}
+
+func rowTitle(doc *openedDocument, index int) string {
+	if doc.Suite() {
+		return doc.Reference(index)
+	}
+	if name, _ := doc.Field(index, assetform.StepName); name != "" {
+		return name
+	}
+	return stepLabel(doc.StepKind(index))
 }
 
 func (a *desktop) editRows(c *ui.Context) {
+	doc := a.doc
 	label := "添加步骤"
-	if a.doc.Suite() {
+	title := "步骤"
+	if doc.Suite() {
 		label = "添加用例"
+		title = "用例顺序"
 	}
-	if ui.Button(c, label).Clicked() {
-		if a.doc.Suite() {
-			a.addReferences()
-		} else {
-			a.doc.AddStep()
-			a.row = a.doc.Rows() - 1
+	ui.Row(c.Key("step-heading")).Gap(5).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, fmt.Sprintf("%s · %d", title, doc.Rows())).Bold().Grow(1)
+		if ui.Button(c, label).Clicked() {
+			if doc.Suite() {
+				a.addReferences()
+			} else {
+				doc.AddStep()
+				doc.row = doc.Rows() - 1
+			}
+			doc.focusRow = true
 		}
-	}
-	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+	})
+	focus := doc.focusRow
+	doc.focusRow = false
+	location := a.liveStep()
+	ui.Scroll(c.Key("step-list")).Grow(1).MinHeight(0).Children(func() {
 		ui.Column(c).Gap(5).FillWidth().Children(func() {
-			for i := 0; i < a.doc.Rows(); i++ {
-				text := a.doc.Reference(i)
-				if !a.doc.Suite() {
-					text, _ = a.doc.Field(i, assetform.StepName)
-					if text == "" {
-						text = stepLabel(a.doc.StepKind(i))
-					}
+			for i := 0; i < doc.Rows(); i++ {
+				text := fmt.Sprintf("%d  %s", i+1, rowTitle(doc, i))
+				if i == location {
+					text += " · 本次执行位置"
 				}
-				text = fmt.Sprintf("%d  %s", i+1, text)
-				if a.row == i {
-					ui.PrimaryButton(c.Key(i), text).FillWidth()
-				} else if ui.Button(c.Key(i), text).FillWidth().Clicked() {
-					a.row = i
+				var button ui.Element
+				if doc.row == i {
+					button = ui.PrimaryButton(c.Key(i), text)
+				} else {
+					button = ui.Button(c.Key(i), text)
+				}
+				button.FillWidth().Tooltip(text)
+				if focus && doc.row == i {
+					button.Focus().ScrollIntoView()
+				}
+				switch {
+				case button.Clicked():
+					doc.row = i
+				case button.Shortcut(0, ui.KeyUp) && i > 0:
+					doc.row, doc.focusRow = i-1, true
+				case button.Shortcut(0, ui.KeyDown) && i+1 < doc.Rows():
+					doc.row, doc.focusRow = i+1, true
 				}
 			}
 		})
 	})
-	ui.Row(c).Gap(6).Children(func() {
-		if ui.Button(c, "上移").Disabled(a.row <= 0).Clicked() {
-			a.doc.MoveRow(a.row, -1)
-			a.row--
+}
+
+func (a *desktop) editRowActions(c *ui.Context, doc *openedDocument) {
+	ui.Row(c.Key("row-actions")).Gap(6).Children(func() {
+		if ui.Button(c, "上移").Disabled(doc.row <= 0).Clicked() {
+			doc.MoveRow(doc.row, -1)
+			doc.row--
+			doc.focusRow = true
 		}
-		if ui.Button(c, "下移").Disabled(a.row < 0 || a.row >= a.doc.Rows()-1).Clicked() {
-			a.doc.MoveRow(a.row, 1)
-			a.row++
+		if ui.Button(c, "下移").Disabled(doc.row < 0 || doc.row >= doc.Rows()-1).Clicked() {
+			doc.MoveRow(doc.row, 1)
+			doc.row++
+			doc.focusRow = true
 		}
-		if ui.Button(c, "移除").Disabled(a.row < 0).Clicked() {
-			a.doc.RemoveRow(a.row)
-			a.row = min(a.row, a.doc.Rows()-1)
+		if ui.Button(c, "移除").Disabled(doc.row < 0).Clicked() {
+			doc.RemoveRow(doc.row)
+			doc.row = min(doc.row, doc.Rows()-1)
+			doc.focusRow = true
 		}
 	})
 }
 
 func (a *desktop) stepFields(c *ui.Context) {
-	row := a.row
-	ui.Column(c.Key(row)).FillWidth().Padding(0, 8).Gap(9).Children(func() {
+	row := a.doc.row
+	ui.Column(c.Key(row)).FillWidth().Gap(8).Children(func() {
 		kind := a.doc.StepKind(row)
 		selected := stepLabel(kind)
 		kinds := make([]string, len(assetform.StepKinds))
@@ -167,7 +304,7 @@ func (a *desktop) stepFields(c *ui.Context) {
 			kinds[i] = stepLabel(value)
 		}
 		ui.Text(c, "步骤类型").Bold()
-		ui.Select(c.Key("kind"), &selected, kinds).Label("步骤类型").Width(235)
+		ui.Select(c.Key("kind"), &selected, kinds).Label("步骤类型").FillWidth()
 		if index := slices.Index(kinds, selected); index >= 0 && assetform.StepKinds[index] != kind {
 			kind = assetform.StepKinds[index]
 			a.doc.SetStepKind(row, kind)
@@ -176,7 +313,7 @@ func (a *desktop) stepFields(c *ui.Context) {
 		if kind == "precondition" || kind == "expect" {
 			ui.Text(c, "检查方式").Bold()
 			next := check
-			ui.Select(c.Key("check"), &next, assetform.CheckKinds).Label("检查方式").Width(235)
+			ui.Select(c.Key("check"), &next, assetform.CheckKinds).Label("检查方式").FillWidth()
 			if next != check {
 				check = next
 				a.doc.SetCheckKind(row, check)
@@ -195,9 +332,9 @@ func (a *desktop) renderField(c *ui.Context, row int, kind, check string, field 
 	key := kind + ":" + check + ":" + field.Label
 	ui.Row(c.Key(key)).Gap(8).Children(func() {
 		if len(field.Choices) > 0 {
-			ui.Select(c, &next, field.Choices).Label(field.Label).Width(235)
+			ui.Select(c, &next, field.Choices).Label(field.Label).Grow(1).MinWidth(0)
 		} else {
-			ui.TextInput(c, &next).Label(field.Label).Placeholder("未设置").Width(340)
+			ui.TextInput(c, &next).Label(field.Label).Placeholder("未设置").Grow(1).MinWidth(0)
 		}
 		if next != value {
 			a.doc.SetField(row, field, next)
@@ -211,119 +348,12 @@ func (a *desktop) renderField(c *ui.Context, row int, kind, check string, field 
 	})
 }
 
-func (a *desktop) runView(c *ui.Context) {
-	ui.Row(c).Gap(8).Children(func() {
-		label := "正在连接本机执行进程"
-		if a.connected {
-			label = "本机执行进程已连接"
-		}
-		ui.Text(c, label).Grow(1)
-		if ui.Button(c, "刷新设备").Disabled(!a.connected || a.refreshing).Clicked() {
-			a.refreshDevices()
-		}
-	})
-	if a.connectionError != "" {
-		ui.Text(c, a.connectionError).Wrap()
-	}
-	if a.deviceError != "" {
-		ui.Text(c, a.deviceError).Wrap()
-	} else if len(a.devices) == 0 && a.connected && !a.refreshing {
-		ui.Text(c, "未发现安卓设备。连接手机并允许 USB 调试后刷新设备。").Wrap()
-	}
-	if a.deviceID != "" && !a.selectedOnline() {
-		ui.Text(c, "选定设备不可用 · "+a.deviceID).Wrap()
-	}
-	for _, device := range a.devices {
-		parts := []string{device.Platform, device.ID}
-		if device.Name != "" {
-			parts = append(parts, device.Name)
-		}
-		if device.State != "device" {
-			parts = append(parts, device.State)
-		}
-		label := strings.Join(parts, " · ")
-		if device.ID == a.deviceID && a.selectedOnline() {
-			ui.PrimaryButton(c.Key(device.ID), "已选择 · "+label)
-		} else if ui.Button(c.Key(device.ID), label).Disabled(device.State != "device").Clicked() {
-			a.deviceID = device.ID
-		}
-	}
-	if a.doc == nil {
-		ui.Text(c, "请在用例与套件页打开或创建文件。")
-	} else if path := a.doc.Path(); path != "" {
-		ui.Text(c, "待执行文件 · "+filepath.Base(path)).Wrap()
-	} else {
-		ui.Text(c, "待执行文件 · 未保存")
-	}
-	ui.Row(c).Gap(8).Children(func() {
-		if ui.PrimaryButton(c, "开始执行").Disabled(a.doc == nil || !a.connected || !a.selectedOnline() || a.commandBusy || a.snapshot.Active()).Clicked() {
-			a.start()
-		}
-		if a.pending != "" && ui.Button(c, "核对启动").Disabled(a.commandBusy || !a.connected).Clicked() {
-			a.checkRequest()
-		}
-	})
-	a.progressView(c)
-}
-
-func (a *desktop) progressView(c *ui.Context) {
-	if a.snapshot.ID == "" {
-		return
-	}
-	p := a.snapshot.Progress
-	ui.Text(c, stateLabel(p.State)+" · "+filepath.Base(a.snapshot.Request.Path)+" · "+a.snapshot.Request.DeviceID).Bold().Wrap()
-	if p.Case > 0 && a.snapshot.Active() {
-		label := fmt.Sprintf("用例 %d", p.Case)
-		if p.Step > 0 {
-			label += fmt.Sprintf(" · 步骤 %d", p.Step)
-		}
-		if p.StepName != "" {
-			label += " · " + p.StepName
-		}
-		if p.Turn > 0 {
-			label += fmt.Sprintf(" · AI 轮次 %d", p.Turn)
-		}
-		ui.Text(c, label).Wrap()
-	}
-	if p.Diagnostic != "" {
-		ui.Text(c, p.Diagnostic).Wrap()
-	}
-	if a.snapshot.Active() {
-		ui.Row(c).Gap(8).Children(func() {
-			unavailable := !a.connected || a.commandBusy
-			if ui.Button(c, "暂停").Disabled(unavailable || p.State != gnosis.ExecutionRunning).Clicked() {
-				a.control("pause")
-			}
-			if ui.Button(c, "恢复").Disabled(unavailable || (p.State != gnosis.ExecutionPaused && p.State != gnosis.ExecutionPausing)).Clicked() {
-				a.control("resume")
-			}
-			if ui.Button(c, "取消执行").Disabled(unavailable || p.State == gnosis.ExecutionCancelling || p.State == gnosis.ExecutionFinishing).Clicked() {
-				a.control("cancel")
-			}
-		})
-	}
-	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-		ui.Column(c).FillWidth().Gap(9).Children(func() {
-			for i, item := range p.Cases {
-				ui.Row(c.Key(i)).Gap(8).FillWidth().Children(func() {
-					label := stateLabel(item.State)
-					if item.Result != "" {
-						label = resultLabel(item.Result)
-					}
-					ui.Text(c, fmt.Sprintf("%d  %s · %s", i+1, item.Name, label)).Wrap().Grow(1)
-					if item.ReportPath != "" && ui.Button(c, "打开报告").Clicked() {
-						a.openReport(item.ReportPath)
-					}
-				})
-				if item.Diagnostic != "" {
-					ui.Text(c, item.Diagnostic).Wrap()
-				}
-			}
-		})
-	})
-}
-
 func (a *desktop) modelView(c *ui.Context) {
+	if a.modelProblem != "" {
+		ui.Text(c, a.modelProblem).Wrap().TextColor(c.Theme().Danger)
+	} else if a.modelNote != "" {
+		ui.Text(c, a.modelNote).Wrap().TextColor(c.Theme().TextMuted)
+	}
 	ui.Text(c, "模型地址").Bold()
 	ui.TextInput(c.Key("endpoint"), &a.model.Endpoint).Label("模型地址").Placeholder("完整的 Chat Completions URL").MaxWidth(580)
 	ui.Text(c, "模型名称").Bold()
@@ -370,45 +400,5 @@ func stepLabel(v string) string {
 		return "AI 步骤"
 	default:
 		return "选择步骤类型"
-	}
-}
-
-func stateLabel(v gnosis.ExecutionState) string {
-	switch v {
-	case gnosis.ExecutionRunning:
-		return "执行中"
-	case gnosis.ExecutionPausing:
-		return "正在暂停"
-	case gnosis.ExecutionPaused:
-		return "已暂停"
-	case gnosis.ExecutionCancelling:
-		return "正在取消"
-	case gnosis.ExecutionFinishing:
-		return "正在收尾"
-	case gnosis.ExecutionCancelled:
-		return "已取消"
-	case gnosis.ExecutionFinished:
-		return "已结束"
-	case gnosis.ExecutionInterrupted:
-		return "执行中断"
-	default:
-		return string(v)
-	}
-}
-
-func resultLabel(v gnosis.Result) string {
-	switch v {
-	case gnosis.ResultPass:
-		return "通过"
-	case gnosis.ResultFail:
-		return "失败"
-	case gnosis.ResultBlocked:
-		return "阻塞"
-	case gnosis.ResultError:
-		return "错误"
-	case gnosis.ResultExecuted:
-		return "已执行"
-	default:
-		return string(v)
 	}
 }

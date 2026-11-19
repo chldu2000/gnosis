@@ -14,6 +14,7 @@ Status: resolved
 2. [独立的本机执行进程](issues/02-serve-local-execution.md)
 3. [原生用例与套件表单](issues/03-edit-case-and-suite-forms.md)
 4. [桌面控制与真机验收](issues/04-connect-the-desktop-to-execution.md)
+5. [原生桌面工作台](issues/05-native-workbench.md)
 
 ## 验收
 
