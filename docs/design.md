@@ -14,7 +14,9 @@ Settled product and behaviour decisions for Gnosis v1. Terms live in [`GLOSSARY.
 
 - A **case** is an ordered list of steps with a name. Names may repeat. One case per file (UTF-8 YAML). Devices and models are chosen at execution time, never stored in the case.
 - A **suite** is another file that references cases by paths relative to the suite file. The same case may be referenced twice to run twice. Suites have no merged result of their own.
-- Desktop editing is forms, not an embedded code editor. Saved files are the same ones the CLI runs.
+- Desktop editing uses native forms. The desktop asks for confirmation to save unsaved changes before executing a case or suite from disk. The same files can be run by the CLI. The suite editor retains relative case references, their order, and duplicates.
+- Saving from a form preserves comments and omitted fields in unchanged parts of the YAML. Saving a suite to a new location recalculates its relative paths so the references still point to the same case files in the same order, including duplicates.
+- If a file changed on disk after it was opened, the desktop stops the save and offers to reload the file or save the form to a different location. Before saving a suite to a new location, the desktop checks that each reference can be expressed as a relative path. If a relative path cannot be formed, for example when the destination is on a different Windows volume from a referenced case, the desktop identifies the reference and asks for a different destination before writing the file.
 - Unknown fields, wrong types, and missing required content refuse to load, with file and location. Load never rewrites files. Duplicate YAML keys refuse.
 - If a name is omitted, the case name is the filename without its last extension. Step names are optional; reports use 1-based indices when absent.
 
@@ -61,7 +63,7 @@ Results: **pass**, **fail**, **blocked**, **error**, **executed**.
 
 - One report per started case, stored outside the case tree. If a case was cancelled after it started, save a partial report with the execution state, completed steps, and any already determined result.
 - Every finished step has an end-of-step screenshot. AI trajectory turns each have a screenshot. Assertion poll frames do not.
-- Desktop opens the report in the system browser after a run; CLI prints the report path.
+- Desktop automatically opens the saved report for a standalone case in the system browser. After a suite runs, the execution view lists the cases that started in order, with their determined results and links to their individual saved reports. Saved report links remain available when the window reconnects to the execution. The CLI prints the saved report paths in order.
 - No run started (bad files, empty suite, offline device) → no report.
 
 ## Host packaging notes
