@@ -1,12 +1,25 @@
 # 从命令行执行用例或套件
 
-构建 Windows 命令行程序，并按 [Android 执行说明](android-execution.md) 准备 ADB 服务和设备资源。用 `adb devices` 查看设备序列号。
+按 [Android 执行说明](android-execution.md) 准备 ADB 服务和设备资源。用 `adb devices -l` 查看在线设备的序列号。
+
+## Windows
 
 ```powershell
 go build -o gnosis.exe ./cmd/gnosis
 .\gnosis.exe --device SERIAL .\cases\smoke.yaml
 .\gnosis.exe --device SERIAL .\cases\suite.yaml
 ```
+
+## macOS Apple Silicon 验收构建
+
+从仓库根目录用 Go 1.27.4 或更新版本构建。将 macOS 所需的设备和 OCR 资源放在 `gnosis` 旁。
+
+```sh
+CGO_ENABLED=0 go build -o ./gnosis ./cmd/gnosis
+./gnosis --device SERIAL --report-dir "$HOME/Gnosis Reports" ./cases/smoke.yaml
+```
+
+## 参数和报告
 
 参数放在用例或套件文件路径之前。套件中的文件全部载入后，程序才会连接指定设备。套件按引用顺序使用同一台设备，遇到失败或阻塞继续执行，遇到执行错误、设备离线或报告保存失败停止。
 
