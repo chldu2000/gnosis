@@ -183,18 +183,19 @@ func (d *AndroidDevice) setIME(component string) error {
 }
 
 func (d *AndroidDevice) RestoreIME() error {
-	if d.restore == "" {
+	original := d.restore
+	// A suite retains the device between cases. Each restoration belongs
+	// only to the case that changed the input method.
+	d.restore = ""
+	if original == "" {
 		return nil
 	}
 	current, err := d.currentIME()
 	if err != nil {
 		return err
 	}
-	if current != d.restore {
-		if err := d.setIME(d.restore); err != nil {
-			return err
-		}
+	if current != original {
+		return d.setIME(original)
 	}
-	d.restore = ""
 	return nil
 }

@@ -76,6 +76,8 @@ type RunRecord struct {
 	Steps     []StepResult
 	IMENote   string
 	Error     error
+	// ReportPath is populated once a requested report has been saved.
+	ReportPath string
 }
 
 type StepResult struct {
@@ -101,26 +103,72 @@ var (
 	runLock           sync.Mutex
 )
 
+type RunOption func(*runSettings)
+
+type runSettings struct {
+	model           ModelConfig
+	reportDirectory string
+}
+
 // Run executes a loaded case. A refusal returns no record. Once started,
 // operation errors are recorded in the run and its step results. Supply model
-// settings with WithModel when the case needs to execute an AI step.
+// settings with WithModel when the case needs to execute an AI step. Report
+// save failures return the completed record and an error.
 func Run(testCase Case, device Device, clock Clock, options ...RunOption) (*RunRecord, error) {
+	release, err := occupyRunDevice(device)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	return executeAndReport(testCase, device, clock, runConfiguration(options))
+}
+
+func occupyRunDevice(device Device) (func(), error) {
 	if !runLock.TryLock() {
 		return nil, ErrRunInProgress
 	}
-	defer runLock.Unlock()
+	acquired := false
+	defer func() {
+		if !acquired {
+			runLock.Unlock()
+		}
+	}()
 	if !device.Online() {
 		return nil, ErrDeviceOffline
 	}
 	if device.Occupied() || !device.TryOccupy() {
 		return nil, ErrDeviceOccupied
 	}
-	defer device.Release()
+	acquired = true
+	return func() {
+		defer runLock.Unlock()
+		device.Release()
+	}, nil
+}
 
+func runConfiguration(options []RunOption) runSettings {
 	var settings runSettings
 	for _, option := range options {
 		option(&settings)
 	}
+	return settings
+}
+
+func executeAndReport(testCase Case, device Device, clock Clock, settings runSettings) (*RunRecord, error) {
+	record := executeCase(testCase, device, clock, settings)
+	if settings.reportDirectory == "" {
+		return record, nil
+	}
+	path, err := saveReport(settings.reportDirectory, record, settings.model.APIKey)
+	if err != nil {
+		return record, safeRunError(fmt.Errorf("save report: %w", err), settings.model.APIKey)
+	}
+	record.ReportPath = path
+	return record, nil
+}
+
+// executeCase runs with the device already occupied by its caller.
+func executeCase(testCase Case, device Device, clock Clock, settings runSettings) *RunRecord {
 	runner := caseRun{device: device, clock: clock, settings: settings}
 	record := &RunRecord{
 		CaseName: testCase.Name, DeviceID: device.ID(), StartedAt: clock.Now(),
@@ -129,7 +177,7 @@ func Run(testCase Case, device Device, clock Clock, options ...RunOption) (*RunR
 	if err := device.EnsureAutomation(); err != nil {
 		record.Result = ResultError
 		record.Error = safeRunError(fmt.Errorf("prepare device automation: %w", err), settings.model.APIKey)
-		return record, nil
+		return record
 	}
 
 	for _, step := range testCase.Steps {
@@ -153,7 +201,7 @@ func Run(testCase Case, device Device, clock Clock, options ...RunOption) (*RunR
 			record.IMENote = safeRunError(fmt.Errorf("restore input method: %w", err), settings.model.APIKey).Error()
 		}
 	}
-	return record, nil
+	return record
 }
 
 type caseRun struct {

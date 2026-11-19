@@ -17,12 +17,6 @@ type ModelConfig struct {
 	Timeout  time.Duration
 }
 
-type runSettings struct {
-	model ModelConfig
-}
-
-type RunOption func(*runSettings)
-
 // WithModel provides host model settings. Run uses them only when it reaches an
 // AI step. Keep credentials in the calling environment, separate from cases.
 func WithModel(config ModelConfig) RunOption {

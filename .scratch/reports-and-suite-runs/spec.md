@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: resolved
 
 # 保存执行报告并从命令行执行用例和套件
 
@@ -83,3 +83,7 @@ Status: ready-for-agent
 
 - 现有执行记录已提供步骤结束截图、AI 轨迹及输入法恢复注明。报告应呈现这些信息，套件需要在多条用例之间持有同一设备。
 - Android 因设备限制尚未完成 AdbKeyboard 安装、文本替换和输入法切回的真机验收。该项继续在 Android 阶段工单 06 跟踪。本阶段用设备替身验证输入法恢复与报告、套件的衔接。
+
+## Comments
+
+四项工单已按既定验收方式验证并关闭。`go test -count=1 ./...`、`go vet ./...` 与 Windows 命令行构建通过。设备和模型分别使用设备替身与本地服务。见[命令行使用说明](../../docs/cli-execution.md)。

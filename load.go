@@ -160,10 +160,20 @@ func (r *Rejection) Error() string {
 	return fmt.Sprintf("%s:%d:%d: %s", r.File, r.Line, r.Column, r.Reason)
 }
 
+type loadSettings struct {
+	reportDirectory string
+}
+
+type LoadOption func(*loadSettings)
+
 // Load reads the case or suite file at path. A file with cases is a suite.
 // A file with name or steps is a case. It does not modify any file.
 // The suite result is nil when path is a case. The case result is zero when path is a suite.
-func Load(path string) (Case, *Suite, error) {
+func Load(path string, options ...LoadOption) (Case, *Suite, error) {
+	var settings loadSettings
+	for _, option := range options {
+		option(&settings)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Case{}, nil, &Rejection{File: path, Line: 0, Column: 0, Reason: "cannot read file"}
@@ -172,7 +182,14 @@ func Load(path string) (Case, *Suite, error) {
 	if err != nil {
 		return Case{}, nil, err
 	}
-	return decodeFile(path, node)
+	loaded, suite, err := decodeFile(path, node, settings)
+	if err != nil {
+		return Case{}, nil, err
+	}
+	if err := settings.checkReportLocation(path); err != nil {
+		return Case{}, nil, err
+	}
+	return loaded, suite, nil
 }
 
 // parseFile validates the document without following any suite references.
@@ -200,7 +217,7 @@ func parseFile(path string, data []byte) (*yaml.Node, error) {
 	return node, nil
 }
 
-func decodeFile(path string, node *yaml.Node) (Case, *Suite, error) {
+func decodeFile(path string, node *yaml.Node, settings loadSettings) (Case, *Suite, error) {
 	var hasCases, hasCase bool
 	for i := 0; i < len(node.Content); i += 2 {
 		switch node.Content[i].Value {
@@ -214,7 +231,7 @@ func decodeFile(path string, node *yaml.Node) (Case, *Suite, error) {
 		return Case{}, nil, rejectMixed(path, node)
 	}
 	if hasCases {
-		suite, err := decodeSuite(path, node)
+		suite, err := decodeSuite(path, node, settings)
 		return Case{}, suite, err
 	}
 	loaded, err := decodeCase(path, node)
@@ -1182,7 +1199,7 @@ func rejectMixed(path string, node *yaml.Node) error {
 	return reject(path, node, "file mixes case and suite fields")
 }
 
-func decodeSuite(path string, node *yaml.Node) (*Suite, error) {
+func decodeSuite(path string, node *yaml.Node, settings loadSettings) (*Suite, error) {
 	var cases *yaml.Node
 	seen := map[string]bool{}
 	for i := 0; i < len(node.Content); i += 2 {
@@ -1209,7 +1226,7 @@ func decodeSuite(path string, node *yaml.Node) (*Suite, error) {
 	}
 	suite := &Suite{Cases: make([]Case, 0, len(cases.Content))}
 	for i, item := range cases.Content {
-		loaded, err := loadReferencedCase(path, i+1, item)
+		loaded, err := loadReferencedCase(path, i+1, item, settings)
 		if err != nil {
 			return nil, err
 		}
@@ -1218,7 +1235,7 @@ func decodeSuite(path string, node *yaml.Node) (*Suite, error) {
 	return suite, nil
 }
 
-func loadReferencedCase(suitePath string, reference int, item *yaml.Node) (Case, error) {
+func loadReferencedCase(suitePath string, reference int, item *yaml.Node, settings loadSettings) (Case, error) {
 	if item.Kind != yaml.ScalarNode || item.Tag != "!!str" {
 		return Case{}, referenceRejection(suitePath, reference, item, "", &Rejection{
 			Line:   item.Line,
@@ -1275,6 +1292,11 @@ func loadReferencedCase(suitePath string, reference int, item *yaml.Node) (Case,
 			})
 		}
 		return Case{}, referenceRejection(suitePath, reference, item, casePath, inner)
+	}
+	if err := settings.checkReportLocation(casePath); err != nil {
+		return Case{}, referenceRejection(suitePath, reference, item, casePath, &Rejection{
+			Reason: err.Error(),
+		})
 	}
 	return loaded, nil
 }
