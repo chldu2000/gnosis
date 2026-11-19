@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: resolved
 
 # 在用例里执行 AI 步骤
 

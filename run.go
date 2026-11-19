@@ -82,7 +82,16 @@ type StepResult struct {
 	Name       string
 	Result     Result
 	Screenshot []byte
+	Trajectory []TrajectoryTurn
 	Error      error
+}
+
+// TrajectoryTurn records one dispatched model action and its resulting frame.
+// Action is an ordinary action step. Screenshot is nil if capture failed.
+type TrajectoryTurn struct {
+	Action     Step
+	Note       string
+	Screenshot []byte
 }
 
 var (
@@ -93,8 +102,9 @@ var (
 )
 
 // Run executes a loaded case. A refusal returns no record. Once started,
-// operation errors are recorded in the run and its step results.
-func Run(testCase Case, device Device, clock Clock) (*RunRecord, error) {
+// operation errors are recorded in the run and its step results. Supply model
+// settings with WithModel when the case needs to execute an AI step.
+func Run(testCase Case, device Device, clock Clock, options ...RunOption) (*RunRecord, error) {
 	if !runLock.TryLock() {
 		return nil, ErrRunInProgress
 	}
@@ -107,17 +117,21 @@ func Run(testCase Case, device Device, clock Clock) (*RunRecord, error) {
 	}
 	defer device.Release()
 
+	var settings runSettings
+	for _, option := range options {
+		option(&settings)
+	}
+	runner := caseRun{device: device, clock: clock, settings: settings}
 	record := &RunRecord{
 		CaseName: testCase.Name, DeviceID: device.ID(), StartedAt: clock.Now(),
 		Result: ResultExecuted,
 	}
 	if err := device.EnsureAutomation(); err != nil {
 		record.Result = ResultError
-		record.Error = fmt.Errorf("prepare device automation: %w", err)
+		record.Error = safeRunError(fmt.Errorf("prepare device automation: %w", err), settings.model.APIKey)
 		return record, nil
 	}
 
-	runner := caseRun{device: device, clock: clock}
 	for _, step := range testCase.Steps {
 		conclusion := runner.step(step)
 		record.Steps = append(record.Steps, conclusion)
@@ -136,7 +150,7 @@ func Run(testCase Case, device Device, clock Clock) (*RunRecord, error) {
 	}
 	if runner.changedIME {
 		if err := device.RestoreIME(); err != nil {
-			record.IMENote = fmt.Sprintf("restore input method: %v", err)
+			record.IMENote = safeRunError(fmt.Errorf("restore input method: %w", err), settings.model.APIKey).Error()
 		}
 	}
 	return record, nil
@@ -145,6 +159,7 @@ func Run(testCase Case, device Device, clock Clock) (*RunRecord, error) {
 type caseRun struct {
 	device     Device
 	clock      Clock
+	settings   runSettings
 	changedIME bool
 }
 
@@ -183,15 +198,21 @@ func (f *frame) screenText() ([]TextRegion, error) {
 
 func (r *caseRun) step(step Step) StepResult {
 	end := &frame{device: r.device}
-	result := ResultExecuted
+	conclusion := StepResult{Name: step.Name, Result: ResultExecuted}
 	var err error
 	switch {
 	case step.Precondition != nil:
-		result, end, err = r.assert(step.Precondition, ResultBlocked)
+		conclusion.Result, end, err = r.assert(step.Precondition, ResultBlocked)
 	case step.Expect != nil:
-		result, end, err = r.assert(step.Expect, ResultFail)
+		conclusion.Result, end, err = r.assert(step.Expect, ResultFail)
+	case step.AI != nil:
+		conclusion.Trajectory, end, err = r.runAI(*step.AI, end)
 	default:
-		err = r.action(step, end)
+		var dispatched bool
+		dispatched, err = r.action(step, end)
+		if dispatched {
+			end = &frame{device: r.device}
+		}
 	}
 
 	screenshot, screenshotErr := end.screenshot()
@@ -199,60 +220,60 @@ func (r *caseRun) step(step Step) StepResult {
 		err = screenshotErr
 	}
 	if err != nil {
-		result = ResultError
+		conclusion.Result = ResultError
+		conclusion.Error = safeRunError(err, r.settings.model.APIKey)
 	}
-	return StepResult{Name: step.Name, Result: result, Screenshot: screenshot, Error: err}
+	conclusion.Screenshot = screenshot
+	return conclusion
 }
 
-func (r *caseRun) action(step Step, observation *frame) error {
+// action reports whether it dispatched the action, even if the device failed
+// while carrying it out. Looking up a target does not dispatch the action.
+func (r *caseRun) action(step Step, observation *frame) (bool, error) {
 	switch {
-	case step.AI != nil:
-		return errors.New("AI steps are unavailable in Android case execution")
 	case step.Launch != nil:
-		return r.device.Launch(step.Launch.App, step.Launch.Entry)
+		return true, r.device.Launch(step.Launch.App, step.Launch.Entry)
 	case step.TapAt != nil:
 		points, err := r.screenPoints([2]float64{step.TapAt.X, step.TapAt.Y})
 		if err != nil {
-			return err
+			return false, err
 		}
-		return r.device.Tap(points[0])
+		return true, r.device.Tap(points[0])
 	case step.Swipe != nil:
 		s := step.Swipe
 		points, err := r.screenPoints([2]float64{s.FromX, s.FromY}, [2]float64{s.ToX, s.ToY})
 		if err != nil {
-			return err
+			return false, err
 		}
-		return r.device.Swipe(points[0], points[1], s.Duration)
+		return true, r.device.Swipe(points[0], points[1], s.Duration)
 	case step.LongPress != nil:
 		point, err := locateOne(step.LongPress.Locator, observation)
 		if err != nil {
-			return err
+			return false, err
 		}
-		*observation = frame{device: r.device}
-		return r.device.LongPress(point, step.LongPress.Duration)
+		return true, r.device.LongPress(point, step.LongPress.Duration)
 	case step.Type != nil:
 		changed, err := r.device.ReplaceText(step.Type.Text)
 		r.changedIME = r.changedIME || changed
-		return err
+		return true, err
 	case step.Key != nil:
 		if step.Key.Name != "back" && step.Key.Name != "home" {
-			return fmt.Errorf("unsupported key %q", step.Key.Name)
+			return false, fmt.Errorf("unsupported key %q", step.Key.Name)
 		}
-		return r.device.PressKey(step.Key.Name)
+		return true, r.device.PressKey(step.Key.Name)
 	case step.Wait != nil:
 		if step.Wait.Duration > 0 {
 			r.clock.Sleep(step.Wait.Duration)
 		}
-		return nil
+		return true, nil
 	case step.Locator != (Locator{}):
 		point, err := locateOne(step.Locator, observation)
 		if err != nil {
-			return err
+			return false, err
 		}
-		*observation = frame{device: r.device}
-		return r.device.Tap(point)
+		return true, r.device.Tap(point)
 	default:
-		return errors.New("step has no action")
+		return false, errors.New("step has no action")
 	}
 }
 
