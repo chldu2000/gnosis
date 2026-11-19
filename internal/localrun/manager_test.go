@@ -154,10 +154,10 @@ func TestManagerRestoresAcceptedRequestAndKeepsOneExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	restored, err := m.Get("", "")
-	if err != nil || restored.Progress.State != gnosis.ExecutionCancelled || restored.ID != finished.ID || len(restored.Progress.Cases) != 1 || restored.Progress.Cases[0].ReportPath == "" {
+	if err != nil || restored.Progress.State != gnosis.ExecutionCancelled || restored.ID != finished.ID || len(restored.Progress.Cases) != 1 || restored.Progress.ReportPath == "" {
 		t.Fatalf("terminal report not restored: %+v, %v", restored, err)
 	}
-	if _, err := os.Stat(restored.Progress.Cases[0].ReportPath); err != nil {
+	if _, err := os.Stat(restored.Progress.ReportPath); err != nil {
 		t.Fatal(err)
 	}
 }

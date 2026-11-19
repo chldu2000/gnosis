@@ -212,8 +212,14 @@ func (a *desktop) applySnapshot(value localrun.Snapshot) {
 	}
 	if value.Request.RequestID == a.autoOpen && !value.Active() {
 		a.autoOpen = ""
-		if !value.Suite && len(value.Progress.Cases) == 1 && value.Progress.Cases[0].ReportPath != "" {
-			a.openReport(value.Progress.Cases[0].ReportPath)
+		if !value.Suite {
+			path := value.Progress.ReportPath
+			if path == "" && len(value.Progress.Cases) == 1 {
+				path = value.Progress.Cases[0].ReportPath
+			}
+			if path != "" {
+				a.openReport(path)
+			}
 		}
 	}
 }

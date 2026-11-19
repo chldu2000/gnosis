@@ -288,6 +288,9 @@ func (a *desktop) progressView(c *ui.Context) {
 	if s.Active() {
 		a.executionControls(c.Key("commands"))
 	}
+	if p.ReportPath != "" && ui.Button(c.Key("session-report"), "打开会话报告").Clicked() {
+		a.openReport(p.ReportPath)
+	}
 	a.resultsView(c.Key("results"))
 }
 
@@ -399,7 +402,7 @@ func (a *desktop) resultsView(c *ui.Context) {
 					if diagnostic := caseDiagnostic(item); diagnostic != "" {
 						ui.Text(c, diagnostic).FontSize(12).Wrap()
 					}
-					if item.ReportPath != "" {
+					if s.Progress.ReportPath == "" && item.ReportPath != "" {
 						action := "打开报告"
 						if item.State == gnosis.ExecutionCancelled {
 							action = "打开部分报告"

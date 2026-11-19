@@ -102,17 +102,32 @@ func readPaths(t *testing.T, stdout string, names ...string) []string {
 	if stdout == "" {
 		lines = nil
 	}
-	if len(lines) != len(names) {
-		t.Fatalf("stdout has %d paths, want %d: %q", len(lines), len(names), stdout)
+	want := 0
+	if len(names) > 0 {
+		want = 1
 	}
-	for i, path := range lines {
-		if !filepath.IsAbs(path) {
-			t.Fatalf("unexpected line on stdout: %q", path)
+	if len(lines) != want {
+		t.Fatalf("stdout has %d paths, want %d: %q", len(lines), want, stdout)
+	}
+	if want == 0 {
+		return lines
+	}
+	path := lines[0]
+	if !filepath.IsAbs(path) {
+		t.Fatalf("unexpected line on stdout: %q", path)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read report %q: %v", path, err)
+	}
+	remaining := string(body)
+	for _, name := range names {
+		title := "<h2>" + name + "</h2>"
+		i := strings.Index(remaining, title)
+		if i < 0 {
+			t.Fatalf("report %q is missing the ordered case %q", path, name)
 		}
-		body, err := os.ReadFile(path)
-		if err != nil || !strings.Contains(string(body), "<h1>"+names[i]+"</h1>") {
-			t.Fatalf("report %q is missing or does not describe %q: %v", path, names[i], err)
-		}
+		remaining = remaining[i+len(title):]
 	}
 	return lines
 }
@@ -197,7 +212,7 @@ func TestCommandRejectsReportDirectoriesInsideReferencedCaseTree(t *testing.T) {
 	}
 }
 
-func TestCommandPrintsSuiteReportsInOrderAndAccountsForAllResults(t *testing.T) {
+func TestCommandPrintsOneSuiteReportAndAccountsForAllResults(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		refs    string
@@ -206,7 +221,7 @@ func TestCommandPrintsSuiteReportsInOrderAndAccountsForAllResults(t *testing.T) 
 	}{
 		{"complete success", "[pass.yaml, repeat.yaml, repeat.yaml]", []string{"pass", "repeat", "repeat"}, 0},
 		{"continues after assertions", "[fail.yaml, blocked.yaml, pass.yaml]", []string{"fail", "blocked", "pass"}, 1},
-		{"stops at device error", "[pass.yaml, error.yaml, repeat.yaml]", []string{"pass", "error"}, 1},
+		{"stops at device error", "[pass.yaml, error.yaml, repeat.yaml]", []string{"pass", "error", "repeat"}, 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			host, device, assets, _ := commandFixture(t, map[string]string{
@@ -221,9 +236,9 @@ func TestCommandPrintsSuiteReportsInOrderAndAccountsForAllResults(t *testing.T) 
 			if exit != test.exit || (stderr == "") != (test.exit == 0) || device.occupied {
 				t.Fatalf("exit=%d stdout=%q stderr=%q, occupied=%v", exit, stdout, stderr, device.occupied)
 			}
-			lines := readPaths(t, stdout, test.reports...)
-			if test.exit == 0 && (lines[1] == lines[2] || !slices.Equal(device.operations, []string{"example", "example"})) {
-				t.Fatal("repeated references did not run and publish separately")
+			readPaths(t, stdout, test.reports...)
+			if test.exit == 0 && !slices.Equal(device.operations, []string{"example", "example"}) {
+				t.Fatal("repeated references did not run separately")
 			}
 			if test.name == "stops at device error" && !slices.Equal(device.operations, []string{"broken"}) {
 				t.Fatalf("suite continued after an error: %v", device.operations)

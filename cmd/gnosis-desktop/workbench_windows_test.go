@@ -60,6 +60,13 @@ func TestWorkbenchKeepsLaunchControlsAboveResults(t *testing.T) {
 			t.Fatalf("unexpected panel order at %dpx: prepare=%+v start=%+v recent=%+v", width, prepare, start, recent)
 		}
 		locate(t, view, "打开部分报告")
+		a.snapshot.Progress.ReportPath = filepath.Join(t.TempDir(), "report.html")
+		view.Frame()
+		locate(t, view, "打开会话报告")
+		if view.HasText("打开部分报告") {
+			t.Fatal("the session report still shows separate case links")
+		}
+		a.snapshot.Progress.ReportPath = ""
 		a.deviceName = "Pixel 8 · Android"
 		a.devices[0].State = "offline"
 		a.devices = append(a.devices, gnosis.DeviceInfo{Platform: "Android", Name: "Pixel 6", ID: "replacement", State: "device"})

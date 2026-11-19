@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} | Gnosis 测试报告</title>
+<style>
+  :root {
+    color-scheme: light;
+    --canvas: #f3f6f8;
+    --sheet: #fff;
+    --ink: #172838;
+    --muted: #526477;
+    --accent: #145c67;
+    --line: #cfd9e1;
+    --selection: #e9f4f4;
+    font: 14px/1.55 "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    color: var(--ink);
+    background: var(--canvas);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; }
+  h1, h2, h3, h4, p, figure, dl, dd { margin: 0; }
+  h1, h2, h3, h4, p, dd { overflow-wrap: anywhere; }
+  a { color: var(--accent); text-underline-offset: .18em; }
+  a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible,
+  [tabindex="-1"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  input, select { font: inherit; color: inherit; }
+  .frame { max-width: 1680px; margin-inline: auto; padding-inline: clamp(14px, 3vw, 48px); }
+  .header { background: var(--sheet); border-bottom: 1px solid var(--line); }
+  .header-inner { padding-block: 22px 20px; }
+  .brand { color: var(--accent); font-weight: 700; font-size: .92rem; }
+  .report-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-top: 5px; }
+  h1 { font-size: clamp(1.65rem, 3vw, 2.35rem); line-height: 1.2; letter-spacing: -.035em; }
+  h2 { font-size: 1.18rem; line-height: 1.35; }
+  h3 { font-size: 1rem; }
+  .meta { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-top: 10px; color: var(--muted); font-size: .9rem; }
+  .meta div { display: flex; min-width: 0; gap: 6px; }
+  .meta dt { flex: none; }
+  .meta dd { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .counts { display: flex; flex-wrap: wrap; gap: 5px 8px; margin-top: 13px; }
+  .status {
+    display: inline-flex; align-items: center; gap: .36em; padding: 2px 7px;
+    border-radius: 4px; background: #e9eef2; color: #435568; white-space: nowrap;
+    font-size: .82rem; line-height: 1.5; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .status[data-tone="pass"] { color: #176047; background: #ddf0e6; }
+  .status[data-tone="fail"], .status[data-tone="error"], .status[data-tone="interrupted"] { color: #882e36; background: #f9e5e7; }
+  .status[data-tone="blocked"], .status[data-tone="cancelled"] { color: #765016; background: #faf0d8; }
+  .status[data-tone="executed"] { color: #225275; background: #e1edf6; }
+  .workspace { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 3fr); gap: 16px; padding-block: 18px 30px; align-items: start; }
+  .interactive .workspace { grid-template-columns: minmax(218px, .8fr) minmax(305px, 1.5fr) minmax(275px, 1fr); }
+  .index, .case, .evidence { background: var(--sheet); border: 1px solid var(--line); border-radius: 7px; min-width: 0; }
+  .index, .evidence { position: sticky; top: 14px; max-height: calc(100dvh - 28px); overflow: auto; }
+  .pane-head { padding: 14px 15px 11px; border-bottom: 1px solid var(--line); }
+  .pane-head p { margin-top: 4px; color: var(--muted); font-size: .88rem; }
+  .filters { padding: 11px 14px 3px; display: grid; gap: 6px; }
+  .filters label { font-size: .88rem; font-weight: 650; }
+  .filters input, .filters select {
+    min-width: 0; width: 100%; padding: 6px 8px; border: 1px solid #9dadba;
+    border-radius: 4px; background: var(--sheet);
+  }
+  .filter-count { font-size: .84rem; color: var(--muted); margin: 6px 14px 4px; }
+  .case-list { margin: 0; padding: 5px 7px 8px; list-style: none; }
+  .case-list li + li { margin-top: 2px; }
+  .case-link {
+    display: grid; grid-template-columns: minmax(2.1rem, auto) minmax(0, 1fr);
+    align-items: start; gap: 2px 5px; border: 1px solid transparent; border-radius: 4px;
+    color: var(--ink); padding: 8px 7px; text-decoration: none;
+  }
+  .case-link:hover, .case-link[aria-current] { background: var(--selection); border-color: #a7c4c7; }
+  .case-number { grid-row: span 2; color: var(--muted); font-size: .85rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .case-name { display: flex; gap: 4px 7px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; overflow-wrap: anywhere; }
+  .case-source { font-size: .82rem; color: var(--muted); overflow-wrap: anywhere; }
+  .case { scroll-margin-top: 14px; }
+  .case + .case { margin-top: 13px; }
+  .interactive .case { margin-top: 0; }
+  .case-head { padding: 15px 16px 13px; border-bottom: 1px solid var(--line); }
+  .case-head .meta { margin-top: 7px; }
+  .case-title { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 10px; }
+  .case-title .case-number { font-size: .92rem; }
+  .case-body { padding: 14px 15px 16px; }
+  .case-body > h3 { margin-bottom: 8px; }
+  .notice { margin: 9px 0; padding: 8px 10px; border-left: 3px solid #a96b16; background: #fbf4e6; }
+  .diagnostic { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .muted { color: var(--muted); font-size: .9rem; }
+  .timeline, .turns { list-style: none; margin: 0; padding: 0; }
+  .step, .turn { scroll-margin-top: 14px; }
+  .step { position: relative; margin-left: 11px; padding: 0 0 10px 17px; border-left: 1px solid var(--line); }
+  .step:last-child { padding-bottom: 0; }
+  .step-number {
+    position: absolute; top: 8px; left: -12px; width: 23px; height: 23px; display: grid; place-items: center;
+    border: 1px solid #a7c4c7; border-radius: 50%; background: var(--sheet); color: var(--accent);
+    font-size: .8rem; font-weight: 650; font-variant-numeric: tabular-nums;
+  }
+  .entry {
+    padding: 7px 9px; border: 1px solid var(--line); border-radius: 4px; background: var(--sheet);
+  }
+  .step.is-selected > .entry, .turn.is-selected > .entry { background: var(--selection); border-color: #8eb5b8; }
+  .step.is-selected > .step-number { background: var(--accent); color: white; border-color: var(--accent); }
+  .entry-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 8px; justify-content: space-between; }
+  .entry h4 { min-width: 0; }
+  .entry h4 a { text-decoration: none; color: var(--ink); }
+  .entry h4 a:hover { text-decoration: underline; }
+  .entry p, .entry dl { margin-top: 4px; }
+  .entry dl { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 2px 7px; font-size: .83rem; }
+  .entry dt { color: var(--muted); overflow-wrap: anywhere; }
+  .asset-link { display: inline-block; margin-top: 4px; font-size: .85rem; }
+  .trajectory { margin-top: 6px; }
+  .trajectory summary { cursor: pointer; color: var(--accent); width: fit-content; font-size: .9rem; }
+  .turns { display: grid; gap: 4px; margin-top: 5px; padding-left: 10px; }
+  .evidence-body { padding: 11px 13px 13px; }
+  .evidence img { width: 100%; max-height: min(62dvh, 720px); object-fit: contain; display: block; background: #e8eef2; border-radius: 4px; }
+  .evidence figcaption { margin-top: 6px; font-size: .86rem; overflow-wrap: anywhere; color: var(--muted); }
+  .evidence a { display: inline-block; margin-top: 8px; }
+  .empty { margin: 4px 14px 11px; }
+  @media (max-width: 940px) {
+    .interactive .workspace { grid-template-columns: minmax(200px, .8fr) minmax(0, 2fr); }
+    .interactive .index { grid-row: 1 / span 2; }
+    .interactive #cases { grid-column: 2; grid-row: 1; }
+    .evidence { grid-column: 2; grid-row: 2; position: static; max-height: none; }
+  }
+  @media (max-width: 610px) {
+    .workspace, .interactive .workspace { grid-template-columns: minmax(0, 1fr); gap: 10px; padding-top: 10px; }
+    .index, .evidence { position: static; }
+    .index { max-height: min(55dvh, 420px); }
+    .interactive .index, .interactive #cases, .evidence { grid-column: auto; grid-row: auto; }
+    .header-inner { padding-block: 14px 12px; }
+    .case-body, .case-head { padding-inline: 11px; }
+  }
+</style>
+</head>
+<body>
+<header class="header">
+  <div class="frame header-inner">
+    <div class="brand">Gnosis 测试报告</div>
+    <div class="report-heading">
+      <h1>{{.Title}}</h1><span class="status" data-tone="{{.State}}">{{statusLabel (printf "%s" .State)}}</span>
+    </div>
+    <dl class="meta">
+      {{if .Source}}<div><dt>{{if .Suite}}套件文件{{else}}用例文件{{end}}</dt><dd>{{.Source}}</dd></div>{{end}}
+      <div><dt>设备</dt><dd>{{.DeviceID}}</dd></div>
+      <div><dt>开始时间</dt><dd><time datetime="{{.StartedAt}}">{{localTime .StartedAt}}</time></dd></div>
+      <div><dt>已记录</dt><dd>{{.Recorded}} / {{len .Cases}} 条用例</dd></div>
+    </dl>
+    <div class="counts" aria-label="用例结果统计">
+      {{range .Counts}}<span class="status" data-tone="{{.Status}}">{{.Label}} <b>{{.Count}}</b></span>{{end}}
+    </div>
+    {{if .Diagnostic}}<p class="notice diagnostic">{{.Diagnostic}}</p>{{end}}
+  </div>
+</header>
+<div class="frame workspace">
+  <aside class="index" aria-label="用例导航">
+    <header class="pane-head"><h2>用例索引</h2></header>
+    <div class="filters" id="case-filters" hidden>
+      <label for="case-search">搜索用例</label>
+      <input id="case-search" type="search" placeholder="名称、文件或 #序号" autocomplete="off">
+      <label for="case-status">结果筛选</label>
+      <select id="case-status">
+        <option value="">所有结果</option>
+        {{range .Counts}}<option value="{{.Status}}">{{.Label}}</option>{{end}}
+      </select>
+    </div>
+    <p class="filter-count" id="filter-count" role="status" hidden></p>
+    <nav aria-label="用例列表">
+      <ol class="case-list">
+        {{range .Cases}}<li data-index-item data-index="{{.Index}}" data-status="{{.Status}}">
+          <a class="case-link" href="#case-{{.Index}}" data-jump>
+            <span class="case-number">#{{.Index}}</span>
+            <span class="case-name"><strong data-case-name>{{.Name}}</strong><span class="status" data-tone="{{.Status}}">{{statusLabel .Status}}</span></span>
+            {{if .Source}}<span class="case-source" data-case-source>{{.Source}}</span>{{end}}
+          </a>
+        </li>{{end}}
+      </ol>
+    </nav>
+    <p id="no-cases" class="empty muted" hidden>没有匹配的用例。试试清除搜索或筛选条件。</p>
+  </aside>
+  <main id="cases">
+    {{range .Cases}}{{$case := .}}
+    <article id="case-{{.Index}}" class="case" data-case data-status="{{.Status}}" tabindex="-1">
+      <header class="case-head">
+        <div class="case-title"><span class="case-number">#{{.Index}}</span><h2>{{.Name}}</h2>
+          <span class="status" data-tone="{{.Status}}">{{statusLabel .Status}}</span>
+        </div>
+        {{if or .Source .StartedAt}}<dl class="meta">
+          {{if .Source}}<div><dt>文件</dt><dd>{{.Source}}</dd></div>{{end}}
+          {{if .StartedAt}}<div><dt>开始</dt><dd><time datetime="{{.StartedAt}}">{{localTime .StartedAt}}</time></dd></div>{{end}}
+        </dl>{{end}}
+      </header>
+      <div class="case-body">
+        {{if .Diagnostic}}<p class="notice diagnostic">{{.Diagnostic}}</p>{{end}}
+        {{if .IMENote}}<p class="notice diagnostic"><strong>输入法注明</strong> {{.IMENote}}</p>{{end}}
+        {{if .Steps}}
+        <h3>步骤</h3>
+        <ol class="timeline">
+          {{range .Steps}}{{$step := .}}{{$stepID := printf "case-%d-step-%d" $case.Index .Index}}
+          <li id="{{$stepID}}" class="step" data-entry data-image="{{.Image}}" data-label="{{.Name}}" data-result="{{.Result}}" tabindex="-1">
+            <span class="step-number" aria-label="第 {{.Index}} 步">{{.Index}}</span>
+            <div class="entry">
+              <div class="entry-heading"><h4><a href="#{{$stepID}}" data-jump>{{.Name}}</a></h4>
+                {{if .Result}}<span class="status" data-tone="{{.Result}}">{{statusLabel (printf "%s" .Result)}}</span>{{end}}
+              </div>
+              {{if .Diagnostic}}<p class="diagnostic">{{.Diagnostic}}</p>{{end}}
+              {{if .Image}}<a class="asset-link" href="{{.Image}}" data-preview>查看步骤截图</a>{{else}}<p class="muted">截图不可用</p>{{end}}
+            </div>
+            {{if .Trajectory}}<details class="trajectory">
+              <summary>AI 轨迹 <span class="muted">{{len .Trajectory}} 轮</span></summary>
+              <ol class="turns">
+                {{range .Trajectory}}{{$turnID := printf "%s-turn-%d" $stepID .Index}}
+                <li id="{{$turnID}}" class="turn" data-entry data-image="{{.Image}}" data-label="{{$step.Name}} / 第 {{.Index}} 轮 {{.Action}}" tabindex="-1">
+                  <div class="entry">
+                    <h4><a href="#{{$turnID}}" data-jump>第 {{.Index}} 轮 <span>{{.Action}}</span></a></h4>
+                    {{if .Params}}<dl>{{range .Params}}<dt>{{.Name}}</dt><dd class="diagnostic">{{.Value}}</dd>{{end}}</dl>{{end}}
+                    {{if .Note}}<p class="diagnostic">{{.Note}}</p>{{end}}
+                    {{if .Image}}<a class="asset-link" href="{{.Image}}" data-preview>查看轨迹截图</a>{{else}}<p class="muted">截图不可用</p>{{end}}
+                  </div>
+                </li>{{end}}
+              </ol>
+            </details>{{end}}
+          </li>{{end}}
+        </ol>
+        {{else if .StartedAt}}<p class="muted">没有步骤记录。</p>
+        {{else}}<p class="muted">此用例在当前报告中尚未开始。</p>{{end}}
+      </div>
+    </article>{{end}}
+  </main>
+  <aside class="evidence" id="evidence" aria-label="截图检视" hidden>
+    <header class="pane-head"><h2>截图检视</h2><p id="evidence-title" aria-live="polite"></p></header>
+    <div class="evidence-body">
+      <p id="evidence-empty" class="muted" role="status"></p>
+      <figure id="evidence-figure" hidden>
+        <img id="evidence-image" alt="">
+        <figcaption id="evidence-caption"></figcaption>
+      </figure>
+      <a id="evidence-open" target="_blank" rel="noopener" hidden>打开原图</a>
+    </div>
+  </aside>
+</div>
+<script>
+  (() => {
+    const byID = id => document.getElementById(id);
+    const cases = Array.from(document.querySelectorAll("[data-case]"));
+    const index = Array.from(document.querySelectorAll("[data-index-item]"));
+    const query = byID("case-search");
+    const status = byID("case-status");
+    const count = byID("filter-count");
+    const evidence = byID("evidence");
+    const image = byID("evidence-image");
+    const figure = byID("evidence-figure");
+    const message = byID("evidence-empty");
+    const original = byID("evidence-open");
+    let activeEntry;
+    const attention = new Set(["fail", "blocked", "error", "cancelled", "interrupted"]);
+
+    const searchable = index.map(item => ({
+      item,
+      name: item.querySelector("[data-case-name]").textContent.toLocaleLowerCase(),
+      source: item.querySelector("[data-case-source]")?.textContent.toLocaleLowerCase() || ""
+    }));
+
+    function filter() {
+      const tokens = query.value.trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean);
+      let visible = 0;
+      for (const { item, name, source } of searchable) {
+        const matches = tokens.every(token => /^#\d+$/u.test(token)
+          ? Number(token.slice(1)) === Number(item.dataset.index)
+          : name.includes(token) || source.includes(token) || token === item.dataset.index);
+        item.hidden = !matches || (status.value !== "" && item.dataset.status !== status.value);
+        if (!item.hidden) visible++;
+      }
+      count.textContent = "显示 " + visible + " / " + index.length + " 条";
+      byID("no-cases").hidden = visible !== 0;
+    }
+
+    function showEvidence(entry) {
+      const source = entry?.dataset.image || "";
+      const title = entry?.dataset.label || "";
+      byID("evidence-title").textContent = title;
+      byID("evidence-caption").textContent = source ? (entry.classList.contains("turn") ? "AI 轮次结束截图" : "步骤结束截图") : "";
+      figure.hidden = original.hidden = !source;
+      message.hidden = Boolean(source);
+      message.textContent = entry ? "此处没有截图。" : "此用例没有可检视的步骤。";
+      if (source) {
+        image.alt = title + "的截图";
+        image.setAttribute("src", source);
+        original.setAttribute("href", source);
+      } else {
+        image.removeAttribute("src");
+        original.removeAttribute("href");
+      }
+    }
+
+    function show(target) {
+      const selected = target?.closest("[data-case]") || cases.find(item => attention.has(item.dataset.status)) || cases[0];
+      if (!selected) return;
+      for (const item of cases) item.hidden = item !== selected;
+      for (const item of index) {
+        const link = item.querySelector("a");
+        if (link.hash === "#" + selected.id) link.setAttribute("aria-current", "location");
+        else link.removeAttribute("aria-current");
+      }
+      activeEntry?.classList.remove("is-selected");
+      const steps = Array.from(selected.querySelectorAll("[data-result]"));
+      activeEntry = target?.matches("[data-entry]") ? target : steps.find(step => attention.has(step.dataset.result)) || steps[0];
+      if (activeEntry) {
+        const trajectory = activeEntry.closest("details");
+        if (trajectory) trajectory.open = true;
+        activeEntry.classList.add("is-selected");
+      }
+      showEvidence(activeEntry);
+    }
+
+    function followHash() {
+      const target = byID(location.hash.slice(1));
+      show(target);
+      target?.scrollIntoView({block: "nearest"});
+    }
+
+    document.documentElement.classList.add("interactive");
+    byID("case-filters").hidden = count.hidden = evidence.hidden = false;
+    image.addEventListener("error", () => {
+      if (!image.getAttribute("src")) return;
+      figure.hidden = true;
+      message.hidden = false;
+      message.textContent = "找不到截图文件。请保留报告旁的 attachments 文件夹。";
+    });
+    query.addEventListener("input", filter);
+    status.addEventListener("change", filter);
+    document.addEventListener("click", event => {
+      const link = event.target.closest("a[data-jump], a[data-preview]");
+      if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      const target = link.hasAttribute("data-preview") ? link.closest("[data-entry]") : byID(link.hash.slice(1));
+      if (!target) return;
+      event.preventDefault();
+      const hash = "#" + target.id;
+      if (location.hash !== hash) history.pushState(null, "", hash);
+      show(target);
+      if (target.matches("[data-case]")) target.focus({preventScroll: true});
+      if (target.matches("[data-entry]") && matchMedia("(max-width: 940px)").matches) {
+        evidence.scrollIntoView({block: "nearest"});
+      } else {
+        target.scrollIntoView({block: "nearest"});
+      }
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey &&
+          !event.target.closest("input, select, textarea, [contenteditable]")) {
+        event.preventDefault();
+        query.focus();
+      }
+    });
+    window.addEventListener("hashchange", followHash);
+    filter();
+    followHash();
+  })();
+</script>
+</body>
+</html>

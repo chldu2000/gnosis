@@ -28,7 +28,7 @@ In-process agent loop: control tree + screenshot → OpenAI-compatible model →
 
 **Feature dir:** `.scratch/reports-and-suite-runs/` (create when starting)
 
-Persist a report per started run (result, step conclusions, screenshots, trajectories). Suite runner: hold one device, continue after fail/blocked, stop after error, refuse to start when load would fail. CLI: require an explicit device, non-zero exit on fail/blocked/error and on runs that never start; print report path. Restore Android IME after the case result is fixed when the run changed it.
+Persist one report per started execution with searchable case results, step records and relative screenshot attachments. Suite runner: hold one device, continue after fail/blocked, stop after error, refuse to start when load would fail. CLI: require an explicit device, non-zero exit on fail/blocked/error and on runs that never start; print one report path. Restore Android IME after the case result is fixed when the run changed it.
 
 ## 5. MyGo desktop forms
 

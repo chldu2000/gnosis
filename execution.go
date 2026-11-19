@@ -31,8 +31,8 @@ type CaseProgress struct {
 	StepName   string `json:",omitempty"`
 }
 
-// ExecutionProgress contains public diagnostics and report paths. Images and
-// model observations remain in the case reports on the execution host.
+// ExecutionProgress contains public diagnostics and the session report path.
+// Images and model observations stay on the execution host.
 type ExecutionProgress struct {
 	Sequence         uint64
 	State            ExecutionState
@@ -40,6 +40,7 @@ type ExecutionProgress struct {
 	StepName         string
 	Cases            []CaseProgress
 	Diagnostic       string
+	ReportPath       string `json:",omitempty"`
 }
 
 // ExecutionControl owns the pause, cancellation and progress state of one execution.
@@ -269,6 +270,9 @@ func (c *ExecutionControl) seal() {
 	if c != nil {
 		c.mu.Lock()
 		defer c.mu.Unlock()
+		if c.sealed {
+			return
+		}
 		c.sealed = true
 		if c.ctx.Err() == nil {
 			c.progress.State = ExecutionFinishing

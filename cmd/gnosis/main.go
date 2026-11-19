@@ -76,7 +76,8 @@ func (host commandHost) run(args []string, stdout, stderr io.Writer) int {
 		diagnose(err.Error())
 		return 1
 	}
-	testCase, suite, err := gnosis.Load(source, gnosis.ReportsOutsideCaseTree(root))
+	var sources []gnosis.CaseSource
+	testCase, suite, err := gnosis.Load(source, gnosis.ReportsOutsideCaseTree(root), gnosis.WithCaseSources(&sources))
 	if err != nil {
 		diagnose(err.Error())
 		return 1
@@ -87,7 +88,7 @@ func (host commandHost) run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	options := []gnosis.RunOption{gnosis.WithReports(root), gnosis.WithModel(config)}
+	options := []gnosis.RunOption{gnosis.WithReports(root), gnosis.WithReportSource(source, sources), gnosis.WithModel(config)}
 	var records []gnosis.RunRecord
 	if suite == nil {
 		var record *gnosis.RunRecord
@@ -100,12 +101,10 @@ func (host commandHost) run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	exit := 0
+	reportPath := ""
 	for _, record := range records {
-		if record.ReportPath != "" {
-			if _, outputErr := fmt.Fprintln(stdout, record.ReportPath); outputErr != nil {
-				diagnose("could not print report path: " + outputErr.Error())
-				exit = 1
-			}
+		if reportPath == "" {
+			reportPath = record.ReportPath
 		}
 		if record.Result != gnosis.ResultPass && record.Result != gnosis.ResultExecuted {
 			exit = 1
@@ -114,6 +113,12 @@ func (host commandHost) run(args []string, stdout, stderr io.Writer) int {
 				message += ": " + record.Error.Error()
 			}
 			diagnose(message)
+		}
+	}
+	if reportPath != "" {
+		if _, outputErr := fmt.Fprintln(stdout, reportPath); outputErr != nil {
+			diagnose("could not print report path: " + outputErr.Error())
+			exit = 1
 		}
 	}
 	if err != nil {

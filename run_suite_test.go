@@ -26,7 +26,9 @@ func TestRunSuiteKeepsTheDeviceAndReportsInReferenceOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, suite, err := gnosis.Load(filepath.Join(assets, "suite.yaml"))
+	input := filepath.Join(assets, "suite.yaml")
+	var sources []gnosis.CaseSource
+	_, suite, err := gnosis.Load(input, gnosis.WithCaseSources(&sources))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,20 +46,24 @@ func TestRunSuiteKeepsTheDeviceAndReportsInReferenceOrder(t *testing.T) {
 			t.Errorf("competing run = %+v, %v, calls %v", record, err, competing.calls)
 		}
 	}
-	runs, err := gnosis.RunSuite(*suite, d, clock, gnosis.WithReports(reports))
+	runs, err := gnosis.RunSuite(*suite, d, clock, gnosis.WithReports(reports), gnosis.WithReportSource(input, sources))
 	wantResults := []gnosis.Result{gnosis.ResultFail, gnosis.ResultBlocked, gnosis.ResultExecuted, gnosis.ResultExecuted, gnosis.ResultError}
 	wantNames := []string{"First failure", "Then blocked", "Repeated case", "Repeated case", "Device error"}
 	if err != nil || len(runs) != len(wantResults) || prepared != len(runs) || d.occupied {
 		t.Fatalf("suite = %+v, error = %v, prepared=%d, occupied=%v", runs, err, prepared, d.occupied)
 	}
-	paths := map[string]bool{}
 	for i, run := range runs {
-		if run.CaseName != wantNames[i] || run.Result != wantResults[i] || run.DeviceID != d.ID() || paths[run.ReportPath] {
+		if run.CaseName != wantNames[i] || run.Result != wantResults[i] || run.DeviceID != d.ID() || run.ReportPath != runs[0].ReportPath {
 			t.Fatalf("unexpected case %d: %+v", i, run)
 		}
-		paths[run.ReportPath] = true
-		body := readReport(t, run.ReportPath)
-		requireInOrder(t, body, run.CaseName, d.ID(), string(run.Result))
+	}
+	body := readReport(t, runs[0].ReportPath)
+	requireInOrder(t, body, `id="case-1"`, "First failure", `id="case-2"`, "Then blocked",
+		`id="case-3"`, "Repeated case", "repeat.yaml", `id="case-4"`, "Repeated case", "repeat.yaml",
+		`id="case-5"`, "Device error", `id="case-6" class="case" data-case data-status="not-started"`, "Must not start")
+	items, err := os.ReadDir(reports)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("expected one report session: %v, %v", items, err)
 	}
 	if runs[3].StartedAt.Sub(runs[2].StartedAt) != 6*time.Millisecond || slices.Contains(d.calls, "back") ||
 		d.calls[0] != "occupy" || d.calls[len(d.calls)-1] != "release" {
@@ -92,8 +98,9 @@ func TestRunSuiteRestoresInputMethodBetweenCases(t *testing.T) {
 	if !slices.Equal(d.calls, want) {
 		t.Fatalf("calls = %v, want %v", d.calls, want)
 	}
-	if !strings.Contains(readReport(t, runs[0].ReportPath), "restore failed") ||
-		strings.Contains(readReport(t, runs[1].ReportPath), "restore failed") {
+	body := readReport(t, runs[0].ReportPath)
+	requireInOrder(t, body, `id="case-1"`, "restore failed", `id="case-2"`, "untouched")
+	if strings.Count(body, "restore failed") != 1 {
 		t.Fatal("input method annotation was lost or carried into the following case")
 	}
 }

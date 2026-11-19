@@ -1,22 +1,35 @@
 package gnosis
 
 import (
-	"encoding/base64"
+	"bytes"
+	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"gnosis/internal/fileio"
 )
 
-// WithReports saves an offline HTML report for each case that starts. The
-// caller selects a report directory outside the case and suite files' tree.
+// WithReports saves an offline report for an execution that starts.
+// The caller selects a directory outside the case and suite files' tree.
 func WithReports(directory string) RunOption {
 	return func(settings *runSettings) { settings.reportDirectory = directory }
+}
+
+// WithReportSource supplies file names for the report's case index.
+// Use the same order as the loaded cases, including repeated references.
+func WithReportSource(input string, sources []CaseSource) RunOption {
+	return func(settings *runSettings) {
+		settings.reportInput, settings.reportSources = input, slices.Clone(sources)
+	}
 }
 
 // ReportsOutsideCaseTree asks Load to check the intended report directory
@@ -72,114 +85,307 @@ func resolveReportPath(path string) string {
 	}
 }
 
-func saveReport(root string, record *RunRecord, secret string) (string, error) {
-	root, err := filepath.Abs(root)
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(root, 0700); err != nil {
-		return "", err
-	}
-	directory, err := os.MkdirTemp(root, "run-")
-	if err != nil {
-		return "", err
-	}
-	tempPath := filepath.Join(directory, ".report.tmp")
-	published := false
-	defer func() {
-		if !published {
-			_ = os.Remove(tempPath)
-			_ = os.Remove(directory)
-		}
-	}()
-	file, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return "", err
-	}
-	err = reportTemplate.Execute(file, viewReport(record, secret))
-	closeErr := file.Close()
-	if err != nil {
-		return "", err
-	}
-	if closeErr != nil {
-		return "", closeErr
-	}
-	path := filepath.Join(directory, "report.html")
-	if err := os.Rename(tempPath, path); err != nil {
-		return "", err
-	}
-	published = true
-	return path, nil
+type sessionReport struct {
+	root, path, secret string
+	view               reportView
+	published          bool
+	failed             bool
 }
 
 type reportView struct {
-	CaseName, DeviceID, StartedAt, Diagnostic, IMENote string
-	Result                                             Result
-	State                                              ExecutionState
-	Steps                                              []reportStep
+	Title, Source, DeviceID, StartedAt, Diagnostic string
+	Suite                                          bool
+	State                                          ExecutionState
+	Recorded                                       int
+	Cases                                          []reportCase
+	Counts                                         []reportCount
+}
+
+type reportCount struct {
+	Status, Label string
+	Count         int
+}
+
+type reportCase struct {
+	Index                                        int
+	Name, Source, StartedAt, Diagnostic, IMENote string
+	Result                                       Result
+	State                                        ExecutionState
+	Status                                       string
+	Steps                                        []reportStep
 }
 
 type reportStep struct {
-	Name, Diagnostic string
-	Result           Result
-	Image            template.URL
-	Trajectory       []reportTurn
+	Index                   int
+	Name, Diagnostic, Image string
+	Result                  Result
+	Trajectory              []reportTurn
 }
 
 type reportTurn struct {
-	Action, Note string
-	Params       []reportParam
-	Image        template.URL
+	Index               int
+	Action, Note, Image string
+	Params              []reportParam
 }
 
 type reportParam struct {
 	Name, Value string
 }
 
-func viewReport(record *RunRecord, secret string) reportView {
-	text := func(value string) string {
-		return publicRunText(value, secret)
+func newSessionReport(settings runSettings, cases []Case, suite bool) *sessionReport {
+	if settings.reportDirectory == "" {
+		return nil
 	}
-	view := reportView{
-		CaseName: text(record.CaseName), DeviceID: text(record.DeviceID),
-		StartedAt: record.StartedAt.Format(time.RFC3339Nano), Result: record.Result,
-		State:   record.State,
-		IMENote: text(record.IMENote),
+	report := &sessionReport{root: settings.reportDirectory, secret: settings.model.APIKey}
+	view := &report.view
+	view.Suite = suite
+	input := ""
+	if settings.reportInput != "" {
+		input, _ = filepath.Abs(settings.reportInput)
+		view.Source = report.text(filepath.Base(settings.reportInput))
+	}
+	view.Title = "套件执行报告"
+	if suite && view.Source != "" {
+		view.Title = strings.TrimSuffix(view.Source, filepath.Ext(view.Source))
+	}
+	for i, testCase := range cases {
+		name := report.text(testCase.Name)
+		source := ""
+		if i < len(settings.reportSources) && settings.reportSources[i].Path != "" {
+			path := settings.reportSources[i].Path
+			source = filepath.Base(path)
+			if absolute, err := filepath.Abs(path); input != "" && err == nil {
+				if relative, err := filepath.Rel(filepath.Dir(input), absolute); err == nil {
+					source = filepath.ToSlash(relative)
+				}
+			}
+			source = report.text(source)
+		}
+		if name == "" {
+			name = fmt.Sprintf("用例 %d", i+1)
+		}
+		view.Cases = append(view.Cases, reportCase{Index: i + 1, Name: name, Source: source, Status: "not-started"})
+	}
+	if !suite {
+		view.Title = view.Cases[0].Name
+	}
+	return report
+}
+
+func (r *sessionReport) text(value string) string {
+	return publicRunText(value, r.secret)
+}
+
+func (r *sessionReport) appendCase(index int, record *RunRecord) (_ string, err error) {
+	first := r.path == ""
+	var directory string
+	if first {
+		root, err := filepath.Abs(r.root)
+		if err != nil {
+			r.failed = true
+			return "", err
+		}
+		if err := os.MkdirAll(root, 0700); err != nil {
+			r.failed = true
+			return "", err
+		}
+		directory, err = os.MkdirTemp(root, "session-")
+		if err != nil {
+			r.failed = true
+			return "", err
+		}
+		r.path = filepath.Join(directory, "report.html")
+		r.view.DeviceID = r.text(record.DeviceID)
+		r.view.StartedAt = record.StartedAt.Format(time.RFC3339Nano)
+	} else {
+		directory = filepath.Dir(r.path)
+		if _, err := os.Stat(r.path); err != nil {
+			r.failed = true
+			return "", err
+		}
+	}
+	attachments := caseAttachments{directory: directory, index: index}
+	defer func() {
+		if err == nil {
+			return
+		}
+		r.failed = true
+		for _, file := range attachments.written {
+			_ = os.Remove(file)
+		}
+		if first {
+			_ = os.Remove(filepath.Join(directory, "attachments"))
+			_ = os.Remove(directory)
+			r.path = ""
+		}
+	}()
+
+	item, err := r.caseView(r.view.Cases[index-1], record, &attachments)
+	if err != nil {
+		return "", err
+	}
+	r.view.Cases[index-1] = item
+	r.view.Recorded++
+	if err := r.publish(); err != nil {
+		return "", err
+	}
+	return r.path, nil
+}
+
+func (r *sessionReport) finish(state ExecutionState, runErr error) error {
+	if r.path == "" || r.failed {
+		return nil
+	}
+	r.view.State = state
+	if runErr != nil && !errors.Is(runErr, context.Canceled) {
+		r.view.Diagnostic = r.text(runErr.Error())
+	}
+	return r.publish()
+}
+
+func (r *sessionReport) publish() error {
+	if r.published {
+		if _, err := os.Stat(r.path); err != nil {
+			return err
+		}
+	}
+	totals := make(map[string]int)
+	for _, item := range r.view.Cases {
+		totals[item.Status]++
+	}
+	r.view.Counts = r.view.Counts[:0]
+	for _, status := range []string{"pass", "fail", "blocked", "error", "executed", "cancelled", "not-started"} {
+		if totals[status] > 0 {
+			r.view.Counts = append(r.view.Counts, reportCount{status, reportStatusLabel(status), totals[status]})
+		}
+	}
+	var buf bytes.Buffer
+	if err := reportTemplate.Execute(&buf, r.view); err != nil {
+		return err
+	}
+	if err := fileio.Replace(r.path, buf.Bytes()); err != nil {
+		return err
+	}
+	r.published = true
+	return nil
+}
+
+func (r *sessionReport) caseView(view reportCase, record *RunRecord, files *caseAttachments) (reportCase, error) {
+	view.StartedAt = record.StartedAt.Format(time.RFC3339Nano)
+	view.Result, view.State, view.IMENote = record.Result, record.State, r.text(record.IMENote)
+	view.Status = string(record.Result)
+	if view.Status == "" {
+		view.Status = string(record.State)
 	}
 	if record.Error != nil {
-		view.Diagnostic = text(record.Error.Error())
+		view.Diagnostic = r.text(record.Error.Error())
 	}
 	for i, step := range record.Steps {
-		item := reportStep{Name: text(step.Name), Result: step.Result, Image: reportImage(step.Screenshot)}
+		image, err := files.save(i+1, 0, step.Screenshot)
+		if err != nil {
+			return reportCase{}, err
+		}
+		item := reportStep{Index: i + 1, Name: r.text(step.Name), Result: step.Result, Image: image}
 		if item.Name == "" {
-			item.Name = strconv.Itoa(i + 1)
+			item.Name = fmt.Sprintf("步骤 %d", i+1)
 		}
 		if step.Error != nil {
-			item.Diagnostic = text(step.Error.Error())
+			item.Diagnostic = r.text(step.Error.Error())
 		}
-		for _, turn := range step.Trajectory {
+		for j, turn := range step.Trajectory {
+			image, err := files.save(i+1, j+1, turn.Screenshot)
+			if err != nil {
+				return reportCase{}, err
+			}
 			action, params := reportAction(turn.Action)
 			for i := range params {
-				params[i].Value = text(params[i].Value)
+				params[i].Value = r.text(params[i].Value)
 			}
 			item.Trajectory = append(item.Trajectory, reportTurn{
-				Action: action, Params: params, Note: text(turn.Note), Image: reportImage(turn.Screenshot),
+				Index: j + 1, Action: action, Params: params, Note: r.text(turn.Note), Image: image,
 			})
 		}
 		view.Steps = append(view.Steps, item)
 	}
-	return view
+	return view, nil
 }
 
-func reportImage(data []byte) template.URL {
-	switch mime := http.DetectContentType(data); mime {
-	case "image/png", "image/jpeg", "image/webp", "image/gif":
-		// Only a fixed image media type and Base64 bytes can form this URL.
-		return template.URL("data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data))
+type caseAttachments struct {
+	directory string
+	index     int
+	written   []string
+}
+
+func (a *caseAttachments) save(step, turn int, data []byte) (string, error) {
+	extension := ""
+	switch http.DetectContentType(data) {
+	case "image/png":
+		extension = ".png"
+	case "image/jpeg":
+		extension = ".jpg"
+	case "image/webp":
+		extension = ".webp"
+	case "image/gif":
+		extension = ".gif"
 	default:
-		return ""
+		return "", nil
+	}
+	name := fmt.Sprintf("attachments/case-%04d-step-%04d", a.index, step)
+	if turn > 0 {
+		name += fmt.Sprintf("-turn-%04d", turn)
+	}
+	name += extension
+	path := filepath.Join(a.directory, filepath.FromSlash(name))
+	if len(a.written) == 0 {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return "", err
+		}
+	}
+	if err := fileio.Replace(path, data); err != nil {
+		return "", err
+	}
+	a.written = append(a.written, path)
+	return name, nil
+}
+
+func reportStatusLabel(status string) string {
+	switch status {
+	case "pass":
+		return "通过"
+	case "fail":
+		return "失败"
+	case "blocked":
+		return "阻塞"
+	case "error":
+		return "错误"
+	case "executed":
+		return "已执行"
+	case "finished":
+		return "已结束"
+	case "cancelled":
+		return "已取消"
+	case "interrupted":
+		return "执行中断"
+	case "not-started":
+		return "未开始"
+	default:
+		return "执行检查点"
 	}
 }
+
+//go:embed report.html.tmpl
+var reportHTML string
+
+var reportTemplate = template.Must(template.New("report").Funcs(template.FuncMap{
+	"statusLabel": reportStatusLabel,
+	"localTime": func(stamp string) string {
+		at, err := time.Parse(time.RFC3339Nano, stamp)
+		if err != nil {
+			return stamp
+		}
+		return at.Format("2006-01-02 15:04:05 -07:00")
+	},
+}).Parse(reportHTML))
 
 func reportAction(step Step) (string, []reportParam) {
 	param := func(name string, value any) reportParam {
@@ -234,56 +440,3 @@ func reportLocator(locator Locator) []reportParam {
 	}
 	return params
 }
-
-var reportTemplate = template.Must(template.New("report").Parse(`<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{.CaseName}} · Gnosis</title>
-<style>
-:root{color-scheme:light dark;font-family:system-ui,sans-serif}
-body{max-width:64rem;margin:2rem auto;padding:0 1rem}
-h1,h2,h3{overflow-wrap:anywhere}
-dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.3rem 1rem}
-dd{margin:0;overflow-wrap:anywhere}
-li{padding:.5rem 0}
-img{display:block;max-width:100%;max-height:34rem;object-fit:contain}
-.verbatim{white-space:pre-wrap;overflow-wrap:anywhere}
-</style>
-</head>
-<body>
-<main>
-<h1>{{.CaseName}}</h1>
-<dl>
-<dt>设备</dt><dd>{{.DeviceID}}</dd>
-<dt>开始时间</dt><dd>{{.StartedAt}}</dd>
-{{if .State}}<dt>执行状态</dt><dd>{{.State}}</dd>{{end}}
-{{if .Result}}<dt>结果</dt><dd>{{.Result}}</dd>{{end}}
-{{if .IMENote}}<dt>输入法注明</dt><dd class="verbatim">{{.IMENote}}</dd>{{end}}
-{{if .Diagnostic}}<dt>诊断</dt><dd class="verbatim">{{.Diagnostic}}</dd>{{end}}
-</dl>
-<h2>步骤</h2>
-{{if .Steps}}<ol>
-{{range .Steps}}<li>
-<h3>{{.Name}}</h3>
-{{if .Result}}<p>结果 {{.Result}}</p>{{end}}
-{{if .Diagnostic}}<p class="verbatim">{{.Diagnostic}}</p>{{end}}
-{{if .Image}}<img alt="步骤结束截图" src="{{.Image}}">{{else}}<p>截图不可用</p>{{end}}
-{{if .Trajectory}}<details open>
-<summary>AI 轨迹</summary>
-<ol>
-{{range .Trajectory}}<li>
-<strong>{{.Action}}</strong>
-{{if .Params}}<dl>{{range .Params}}<dt>{{.Name}}</dt><dd class="verbatim">{{.Value}}</dd>{{end}}</dl>{{end}}
-<p class="verbatim">{{.Note}}</p>
-{{if .Image}}<img alt="动作结束截图" src="{{.Image}}">{{else}}<p>截图不可用</p>{{end}}
-</li>{{end}}
-</ol>
-</details>{{end}}
-</li>{{end}}
-</ol>{{else}}<p>没有步骤记录</p>{{end}}
-</main>
-</body>
-</html>
-`))

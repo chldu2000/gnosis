@@ -61,9 +61,11 @@ Results: **pass**, **fail**, **blocked**, **error**, **executed**.
 
 ## Reports
 
-- One report per started case, stored outside the case tree. If a case was cancelled after it started, save a partial report with the execution state, completed steps, and any already determined result.
+- Each started execution publishes one offline report in a session directory outside the case tree. Its `report.html` links to screenshots in the sibling `attachments/` directory. Copy the session directory to keep the report portable.
+- The report lists cases in execution order, including repeated references and unstarted cases. Readers can search by case name, source file, or sequence number and filter by result. Each started case retains its own result, diagnostics, and step history.
+- The same report is updated after each recorded case. Cancellation finalizes it with the execution state, completed steps and any already determined results. A saved checkpoint remains readable if execution is interrupted.
 - Every finished step has an end-of-step screenshot. AI trajectory turns each have a screenshot. Assertion poll frames do not.
-- Desktop automatically opens the saved report for a standalone case in the system browser. After a suite runs, the execution view lists the cases that started in order, with their determined results and links to their individual saved reports. Saved report links remain available when the window reconnects to the execution. The CLI prints the saved report paths in order.
+- Desktop automatically opens the saved report for a standalone case in the system browser. The execution view links to the session report and lists individual case results. The saved path is restored when the window reconnects. The CLI prints the saved report path once.
 - No run started (bad files, empty suite, offline device) → no report.
 
 ## Host packaging notes

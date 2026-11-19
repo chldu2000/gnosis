@@ -83,7 +83,7 @@ func TestControlledSuitePausesAndSavesPartialReportAfterCancellation(t *testing.
 		t.Fatalf("pause acknowledgment = %s", state)
 	}
 	paused := awaitState(t, control, gnosis.ExecutionPaused)
-	if len(paused.Cases) != 2 || paused.Cases[0].Result != gnosis.ResultExecuted || paused.Cases[0].ReportPath == "" {
+	if len(paused.Cases) != 2 || paused.Cases[0].Result != gnosis.ResultExecuted || paused.ReportPath == "" {
 		t.Fatalf("lost the first case while paused: %+v", paused)
 	}
 	if _, err := gnosis.Run(gnosis.Case{}, &testDevice{}, &testClock{}); !errors.Is(err, gnosis.ErrRunInProgress) {
@@ -95,11 +95,11 @@ func TestControlledSuitePausesAndSavesPartialReportAfterCancellation(t *testing.
 		t.Fatal(err)
 	}
 	second := finished.Cases[1]
-	if len(finished.Cases) != 2 || second.State != gnosis.ExecutionCancelled || second.Result != "" || second.ReportPath == "" ||
-		finished.Cases[0].ReportPath != paused.Cases[0].ReportPath || device.occupied || !slices.Contains(device.calls, "restore") || slices.Contains(device.calls, "home") {
+	if len(finished.Cases) != 2 || second.State != gnosis.ExecutionCancelled || second.Result != "" ||
+		finished.ReportPath != paused.ReportPath || device.occupied || !slices.Contains(device.calls, "restore") || slices.Contains(device.calls, "home") {
 		t.Fatalf("cancelled suite: %+v, device calls %v", finished, device.calls)
 	}
-	if body := readReport(t, second.ReportPath); !strings.Contains(body, "already typed") || strings.Contains(body, "still waiting") || !strings.Contains(body, "cancelled") {
+	if body := readReport(t, finished.ReportPath); !strings.Contains(body, "already typed") || strings.Contains(body, "still waiting") || !strings.Contains(body, "cancelled") {
 		t.Fatalf("partial report was missing completed step or showed unwitnessed result: %s", body)
 	}
 	if after := transition(t, control, "cancel"); after.State != gnosis.ExecutionCancelled || after.Sequence != finished.Sequence {

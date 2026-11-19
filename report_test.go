@@ -1,9 +1,8 @@
 package gnosis_test
 
 import (
-	"encoding/base64"
+	"bytes"
 	"errors"
-	"html"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -37,8 +36,16 @@ func requireInOrder(t *testing.T, text string, fragments ...string) {
 	}
 }
 
-func screenshotURL(frame int) string {
-	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(fixtureScreenshot(frame))
+func checkReportImage(t *testing.T, report, relative string, frame int) {
+	t.Helper()
+	body := readReport(t, report)
+	if !strings.Contains(body, `href="`+relative+`"`) || strings.Contains(body, "data:image/") {
+		t.Fatalf("report does not link to the external image %s", relative)
+	}
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(report), filepath.FromSlash(relative)))
+	if err != nil || !bytes.Equal(data, fixtureScreenshot(frame)) {
+		t.Fatalf("attachment %s does not contain frame %d: %v", relative, frame, err)
+	}
 }
 
 func TestRunSavesAnOfflineReportWithoutChangingTheCase(t *testing.T) {
@@ -59,9 +66,10 @@ func TestRunSavesAnOfflineReportWithoutChangingTheCase(t *testing.T) {
 		t.Fatalf("Run = %+v, %v", first, err)
 	}
 	body := readReport(t, first.ReportPath)
-	requireInOrder(t, body, "设置 &lt;测试&gt;", d.ID(), clock.now.Format(time.RFC3339), "executed", "first step", "<h3>2</h3>")
-	requireInOrder(t, html.UnescapeString(body), screenshotURL(1), screenshotURL(2))
-	if strings.Contains(body, "设置 <测试>") || strings.Contains(body, "<script") || strings.Contains(body, "https://") {
+	requireInOrder(t, body, "设置 &lt;测试&gt;", d.ID(), clock.now.Format(time.RFC3339), "executed", "first step", "步骤 2")
+	checkReportImage(t, first.ReportPath, "attachments/case-0001-step-0001.png", 1)
+	checkReportImage(t, first.ReportPath, "attachments/case-0001-step-0002.png", 2)
+	if strings.Contains(body, "设置 <测试>") || strings.Contains(body, "<script src=") || strings.Contains(body, "https://") {
 		t.Fatal("report contains raw input or depends on an outside resource")
 	}
 	if relative, err := filepath.Rel(reports, first.ReportPath); err != nil || strings.HasPrefix(relative, "..") {
@@ -106,7 +114,7 @@ func TestRunReportsActualResultsAndOnlyStartedSteps(t *testing.T) {
 				t.Fatalf("Run = %+v, %v", record, err)
 			}
 			body := readReport(t, record.ReportPath)
-			if !strings.Contains(body, "<dd>"+string(test.want)+"</dd>") ||
+			if !strings.Contains(body, `data-status="`+string(test.want)+`"`) ||
 				strings.Contains(body, "later step") != (test.count == 2) ||
 				strings.Contains(body, "没有步骤记录") != (test.count == 0) ||
 				strings.Contains(body, "截图不可用") != (test.fail == "screenshot") {
@@ -128,9 +136,10 @@ func TestRunReportContainsTheAssertionJudgmentFrame(t *testing.T) {
 	if err != nil || record.Result != gnosis.ResultPass || d.frames != 2 {
 		t.Fatalf("Run = %+v, %v, frames=%d", record, err, d.frames)
 	}
-	body := html.UnescapeString(readReport(t, record.ReportPath))
-	if strings.Contains(body, screenshotURL(1)) || !strings.Contains(body, screenshotURL(2)) {
-		t.Fatal("report did not use only the deciding screenshot")
+	checkReportImage(t, record.ReportPath, "attachments/case-0001-step-0001.png", 2)
+	images, err := os.ReadDir(filepath.Join(filepath.Dir(record.ReportPath), "attachments"))
+	if err != nil || len(images) != 1 {
+		t.Fatalf("report also saved polling frames: %v, %v", images, err)
 	}
 }
 
@@ -182,11 +191,10 @@ func TestRunReportKeepsPartialTrajectoryAndIMEAnnotation(t *testing.T) {
 	}
 	raw := readReport(t, record.ReportPath)
 	requireInOrder(t, raw, "输入法注明", "cannot restore [redacted]", "截图不可用",
-		"AI 轨迹", "<strong>type</strong>", "&lt;input&gt;", "  &lt;model note&gt;\n保留原文  ",
-		"<strong>wait</strong>", "second note", "截图不可用")
-	body := html.UnescapeString(raw)
-	if !strings.Contains(body, screenshotURL(2)) || strings.Contains(body, screenshotURL(1)) ||
-		strings.Contains(raw, testAPIKey) || strings.Contains(raw, "raw-response-marker") ||
+		"AI 轨迹", "<span>type</span>", "&lt;input&gt;", "  &lt;model note&gt;\n保留原文  ",
+		"<span>wait</span>", "second note", "截图不可用")
+	checkReportImage(t, record.ReportPath, "attachments/case-0001-step-0001-turn-0001.png", 2)
+	if strings.Contains(raw, testAPIKey) || strings.Contains(raw, "raw-response-marker") ||
 		strings.Contains(raw, "Bearer ") || strings.Contains(raw, "<model note>") || strings.Contains(raw, "<input>") {
 		t.Fatal("report leaked request details, rendered model text as markup, or used the wrong frame")
 	}
@@ -200,9 +208,11 @@ func TestRunReportShowsStepAndTrajectoryEndsAndOmitsEmptyTrajectory(t *testing.T
 	if err != nil || record.Result != gnosis.ResultExecuted {
 		t.Fatalf("Run = %+v, %v", record, err)
 	}
-	body := html.UnescapeString(readReport(t, record.ReportPath))
-	if strings.Count(body, "AI 轨迹") != 1 || strings.Count(body, screenshotURL(2)) != 2 ||
-		strings.Count(body, screenshotURL(3)) != 1 || strings.Contains(body, screenshotURL(1)) {
+	body := readReport(t, record.ReportPath)
+	if strings.Count(body, "<summary>AI 轨迹") != 1 {
 		t.Fatal("report did not distinguish the step and trajectory images")
 	}
+	checkReportImage(t, record.ReportPath, "attachments/case-0001-step-0001.png", 2)
+	checkReportImage(t, record.ReportPath, "attachments/case-0001-step-0001-turn-0001.png", 2)
+	checkReportImage(t, record.ReportPath, "attachments/case-0001-step-0002.png", 3)
 }

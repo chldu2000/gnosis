@@ -78,7 +78,7 @@ type RunRecord struct {
 	IMENote   string
 	Error     error
 	State     ExecutionState
-	// ReportPath is populated once a requested report has been saved.
+	// ReportPath points to the execution's shared report when this case was saved.
 	ReportPath string
 }
 
@@ -110,6 +110,9 @@ type RunOption func(*runSettings)
 type runSettings struct {
 	model           ModelConfig
 	reportDirectory string
+	reportInput     string
+	reportSources   []CaseSource
+	report          *sessionReport
 	control         *ExecutionControl
 	persist         func(ExecutionProgress) error
 }
@@ -124,7 +127,10 @@ func Run(testCase Case, device Device, clock Clock, options ...RunOption) (*RunR
 		return nil, err
 	}
 	defer release()
-	return executeAndReport(testCase, device, clock, runConfiguration(options), 1, true)
+	settings := runConfiguration(options)
+	settings.report = newSessionReport(settings, []Case{testCase}, false)
+	record, err := executeAndReport(testCase, device, clock, settings, 1, true)
+	return record, settings.finishReport(ExecutionFinished, err)
 }
 
 func occupyRunDevice(device Device) (func(), error) {
@@ -179,15 +185,25 @@ func runConfiguration(options []RunOption) runSettings {
 
 func executeAndReport(testCase Case, device Device, clock Clock, settings runSettings, index int, last bool) (*RunRecord, error) {
 	record := executeCase(testCase, device, clock, settings, index, last)
-	if settings.reportDirectory == "" {
+	if settings.report == nil {
 		return record, nil
 	}
-	path, err := saveReport(settings.reportDirectory, record, settings.model.APIKey)
+	path, err := settings.report.appendCase(index, record)
 	if err != nil {
 		return record, safeRunError(fmt.Errorf("save report: %w", err), settings.model.APIKey)
 	}
 	record.ReportPath = path
 	return record, nil
+}
+
+func (settings runSettings) finishReport(state ExecutionState, runErr error) error {
+	if settings.report == nil {
+		return runErr
+	}
+	if err := settings.report.finish(state, runErr); err != nil {
+		return errors.Join(runErr, safeRunError(fmt.Errorf("save report: %w", err), settings.model.APIKey))
+	}
+	return runErr
 }
 
 // executeCase runs with the device already occupied by its caller.

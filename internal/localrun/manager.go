@@ -152,7 +152,7 @@ func (m *Manager) Start(request StartRequest) (Snapshot, error) {
 			accepted = true
 			started <- response{snapshot: initial}
 			return nil
-		}, gnosis.WithReports(m.config.ReportDir), gnosis.WithModel(model), gnosis.WithProgressPersistence(func(progress gnosis.ExecutionProgress) error {
+		}, gnosis.WithReports(m.config.ReportDir), gnosis.WithReportSource(path, sources), gnosis.WithModel(model), gnosis.WithProgressPersistence(func(progress gnosis.ExecutionProgress) error {
 			current := initial
 			current.Progress = progress
 			return m.save(current)

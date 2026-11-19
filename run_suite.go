@@ -20,7 +20,10 @@ func RunSuite(suite Suite, device Device, clock Clock, options ...RunOption) ([]
 	}
 	defer release()
 
-	return runSuiteCases(suite.Cases, device, clock, runConfiguration(options))
+	settings := runConfiguration(options)
+	settings.report = newSessionReport(settings, suite.Cases, true)
+	records, err := runSuiteCases(suite.Cases, device, clock, settings)
+	return records, settings.finishReport(ExecutionFinished, err)
 }
 
 // RunControlled extends the ordinary case and suite entry points with local
@@ -49,6 +52,19 @@ func RunControlled(testCase Case, suite *Suite, device Device, clock Clock, cont
 		}
 	}
 	setDeviceContext(device, control.Context())
+	cases := []Case{testCase}
+	if suite != nil {
+		cases = suite.Cases
+	}
+	settings.report = newSessionReport(settings, cases, suite != nil)
+	defer func() {
+		control.seal()
+		state := ExecutionFinished
+		if control.Context().Err() != nil {
+			state = ExecutionCancelled
+		}
+		err = settings.finishReport(state, err)
+	}()
 	if suite == nil {
 		if err := control.checkpoint(); err != nil {
 			return err
@@ -93,7 +109,10 @@ func runSuiteCases(cases []Case, device Device, clock Clock, settings runSetting
 func publishCase(control *ExecutionControl, record *RunRecord) {
 	control.mark(func(progress *ExecutionProgress) {
 		item := &progress.Cases[len(progress.Cases)-1]
-		item.Result, item.State, item.ReportPath = record.Result, record.State, record.ReportPath
+		item.Result, item.State = record.Result, record.State
+		if record.ReportPath != "" {
+			progress.ReportPath = record.ReportPath
+		}
 		if record.Error != nil {
 			item.Diagnostic = record.Error.Error()
 		}
