@@ -33,7 +33,16 @@ func (r *caseRun) runAI(step AI, observation *frame) ([]TrajectoryTurn, *frame, 
 	}
 
 	var trajectory []TrajectoryTurn
+	control := r.settings.control
 	for len(trajectory) < step.MaxSteps {
+		pausedBefore := control.pauseGeneration()
+		if err := control.checkpoint(); err != nil {
+			return trajectory, observation, err
+		}
+		if pausedBefore != control.pauseGeneration() {
+			observation = &frame{device: r.device}
+		}
+		pausedBefore = control.pauseGeneration()
 		tree, err := r.device.ControlTree()
 		if err != nil {
 			return trajectory, observation, fmt.Errorf("observe AI step control tree: %w", err)
@@ -42,9 +51,19 @@ func (r *caseRun) runAI(step AI, observation *frame) ([]TrajectoryTurn, *frame, 
 		if err != nil {
 			return trajectory, observation, err
 		}
-		choice, err := model.decide(step.Goal, tree, screenshot)
-		if err != nil || choice.stop {
+		choice, err := model.decide(control.Context(), step.Goal, tree, screenshot)
+		if err != nil {
 			return trajectory, observation, err
+		}
+		if err := control.checkpoint(); err != nil {
+			return trajectory, observation, err
+		}
+		if pausedBefore != control.pauseGeneration() {
+			observation = &frame{device: r.device}
+			continue
+		}
+		if choice.stop {
+			return trajectory, observation, nil
 		}
 
 		// Locator fallback should inspect the device at dispatch time. The
@@ -58,10 +77,15 @@ func (r *caseRun) runAI(step AI, observation *frame) ([]TrajectoryTurn, *frame, 
 			return trajectory, observation, actionErr
 		}
 		observation = &frame{device: r.device}
-		screenshot, captureErr := observation.screenshot()
+		var endScreenshot []byte
+		var captureErr error
+		if control.Context().Err() == nil {
+			endScreenshot, captureErr = observation.screenshot()
+		}
 		trajectory = append(trajectory, TrajectoryTurn{
-			Action: choice.action, Note: choice.note, Screenshot: screenshot,
+			Action: choice.action, Note: choice.note, Screenshot: endScreenshot,
 		})
+		control.mark(func(progress *ExecutionProgress) { progress.Turn = len(trajectory) })
 		if actionErr != nil {
 			return trajectory, observation, actionErr
 		}
@@ -73,12 +97,19 @@ func (r *caseRun) runAI(step AI, observation *frame) ([]TrajectoryTurn, *frame, 
 }
 
 func safeRunError(err error, secret string) error {
-	if secret == "" {
+	if err == nil || secret == "" {
 		return err
 	}
 	message := err.Error()
-	if strings.Contains(message, secret) {
-		return errors.New(strings.ReplaceAll(message, secret, "[redacted]"))
+	if redacted := publicRunText(message, secret); redacted != message {
+		return errors.New(redacted)
 	}
 	return err
+}
+
+func publicRunText(value, secret string) string {
+	if secret == "" {
+		return value
+	}
+	return strings.ReplaceAll(value, secret, "[redacted]")
 }

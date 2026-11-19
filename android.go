@@ -24,9 +24,10 @@ import (
 )
 
 const (
-	automationJar = "/data/local/tmp/u2.jar"
-	imeAPK        = "/data/local/tmp/gnosis-uiautomator-ime.apk"
-	automationIME = "com.github.uiautomator/.AdbKeyboard"
+	androidADBAddr = "127.0.0.1:5037"
+	automationJar  = "/data/local/tmp/u2.jar"
+	imeAPK         = "/data/local/tmp/gnosis-uiautomator-ime.apk"
+	automationIME  = "com.github.uiautomator/.AdbKeyboard"
 	// automationMainClass is the uiautomator2 JVM entry point; it also marks
 	// the process in /proc/<pid>/cmdline before Gnosis kills it.
 	automationMainClass = "com.wetest.uia2.Main"
@@ -68,7 +69,7 @@ func NewAndroidDevice(serial string) (*AndroidDevice, error) {
 		return nil, fmt.Errorf("create device lock directory: %w", err)
 	}
 	lock := filepath.Join(dir, fmt.Sprintf("android-%x.lock", sha256.Sum256([]byte(serial))))
-	adb := adbTransport{address: "127.0.0.1:5037", serial: serial}
+	adb := adbTransport{address: androidADBAddr, serial: serial}
 	transport := &http.Transport{
 		DialContext:       adb.dialAutomation,
 		DisableKeepAlives: true,
@@ -86,6 +87,8 @@ func NewAndroidDevice(serial string) (*AndroidDevice, error) {
 
 func (d *AndroidDevice) ID() string   { return d.adb.serial }
 func (d *AndroidDevice) Online() bool { return d.adb.online() }
+
+func (d *AndroidDevice) setRunContext(ctx context.Context) { d.adb.parent = ctx }
 
 func (d *AndroidDevice) Occupied() bool {
 	if d.claim.Locked() {
@@ -175,7 +178,13 @@ func (d *AndroidDevice) EnsureAutomation() error {
 		if d.automationReady() {
 			return nil
 		}
-		time.Sleep(200 * time.Millisecond)
+		timer := time.NewTimer(200 * time.Millisecond)
+		select {
+		case <-timer.C:
+		case <-d.adb.context().Done():
+			timer.Stop()
+			return d.adb.context().Err()
+		}
 	}
 	return errors.New("uiautomator2 did not become ready on port 9008")
 }
@@ -198,7 +207,7 @@ func (d *AndroidDevice) automationReady() bool {
 }
 
 func (d *AndroidDevice) automationGET(path string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(d.adb.context(), time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://uiautomator"+path, nil)
 	if err != nil {
@@ -229,7 +238,7 @@ func (d *AndroidDevice) rpc(method string, result any, timeout time.Duration, ar
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(d.adb.context(), timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://uiautomator/jsonrpc/0", bytes.NewReader(body))
 	if err != nil {

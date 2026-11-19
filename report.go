@@ -115,6 +115,7 @@ func saveReport(root string, record *RunRecord, secret string) (string, error) {
 type reportView struct {
 	CaseName, DeviceID, StartedAt, Diagnostic, IMENote string
 	Result                                             Result
+	State                                              ExecutionState
 	Steps                                              []reportStep
 }
 
@@ -137,14 +138,12 @@ type reportParam struct {
 
 func viewReport(record *RunRecord, secret string) reportView {
 	text := func(value string) string {
-		if secret == "" {
-			return value
-		}
-		return strings.ReplaceAll(value, secret, "[redacted]")
+		return publicRunText(value, secret)
 	}
 	view := reportView{
 		CaseName: text(record.CaseName), DeviceID: text(record.DeviceID),
 		StartedAt: record.StartedAt.Format(time.RFC3339Nano), Result: record.Result,
+		State:   record.State,
 		IMENote: text(record.IMENote),
 	}
 	if record.Error != nil {
@@ -259,7 +258,8 @@ img{display:block;max-width:100%;max-height:34rem;object-fit:contain}
 <dl>
 <dt>设备</dt><dd>{{.DeviceID}}</dd>
 <dt>开始时间</dt><dd>{{.StartedAt}}</dd>
-<dt>结果</dt><dd>{{.Result}}</dd>
+{{if .State}}<dt>执行状态</dt><dd>{{.State}}</dd>{{end}}
+{{if .Result}}<dt>结果</dt><dd>{{.Result}}</dd>{{end}}
 {{if .IMENote}}<dt>输入法注明</dt><dd class="verbatim">{{.IMENote}}</dd>{{end}}
 {{if .Diagnostic}}<dt>诊断</dt><dd class="verbatim">{{.Diagnostic}}</dd>{{end}}
 </dl>
@@ -267,7 +267,7 @@ img{display:block;max-width:100%;max-height:34rem;object-fit:contain}
 {{if .Steps}}<ol>
 {{range .Steps}}<li>
 <h3>{{.Name}}</h3>
-<p>结果 {{.Result}}</p>
+{{if .Result}}<p>结果 {{.Result}}</p>{{end}}
 {{if .Diagnostic}}<p class="verbatim">{{.Diagnostic}}</p>{{end}}
 {{if .Image}}<img alt="步骤结束截图" src="{{.Image}}">{{else}}<p>截图不可用</p>{{end}}
 {{if .Trajectory}}<details open>

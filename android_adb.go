@@ -18,6 +18,18 @@ import (
 type adbTransport struct {
 	address string
 	serial  string
+	parent  context.Context
+}
+
+func (a adbTransport) context() context.Context {
+	if a.parent != nil {
+		return a.parent
+	}
+	return context.Background()
+}
+
+func interruptADB(ctx context.Context, socket net.Conn) func() bool {
+	return context.AfterFunc(ctx, func() { _ = socket.SetDeadline(time.Now()) })
 }
 
 func (a adbTransport) open(ctx context.Context, service string, onDevice bool) (conn net.Conn, err error) {
@@ -37,6 +49,7 @@ func (a adbTransport) open(ctx context.Context, service string, onDevice bool) (
 			return nil, err
 		}
 	}
+	defer interruptADB(ctx, socket)()
 	if onDevice {
 		if err := adbRequest(socket, "host:transport:"+a.serial); err != nil {
 			return nil, err
@@ -88,13 +101,14 @@ func adbReadString(r io.Reader) (string, error) {
 }
 
 func (a adbTransport) online() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(a.context(), 3*time.Second)
 	defer cancel()
 	conn, err := a.open(ctx, "host-serial:"+a.serial+":get-state", false)
 	if err != nil {
 		return false
 	}
 	defer conn.Close()
+	defer interruptADB(ctx, conn)()
 	state, err := adbReadString(conn)
 	return err == nil && state == "device"
 }
@@ -115,13 +129,14 @@ func (a adbTransport) dialAutomation(ctx context.Context, _, _ string) (net.Conn
 
 // shell is restricted to private provisioning commands in the adapter.
 func (a adbTransport) shell(command string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(a.context(), 10*time.Second)
 	defer cancel()
 	conn, err := a.open(ctx, "shell:"+command, true)
 	if err != nil {
 		return "", err
 	}
 	defer conn.Close()
+	defer interruptADB(ctx, conn)()
 	output, err := io.ReadAll(io.LimitReader(conn, 64<<10))
 	return strings.TrimSpace(string(output)), err
 }
@@ -129,12 +144,13 @@ func (a adbTransport) shell(command string) (string, error) {
 // startShell keeps the service alive on the original ADB stream. The command
 // prints its PID before replacing the shell with the service process.
 func (a adbTransport) startShell(command string) (net.Conn, int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(a.context(), 10*time.Second)
 	defer cancel()
 	conn, err := a.open(ctx, "shell:"+command, true)
 	if err != nil {
 		return nil, 0, err
 	}
+	defer interruptADB(ctx, conn)()
 	output, err := bufio.NewReader(conn).ReadSlice('\n')
 	if err != nil {
 		conn.Close()
@@ -149,13 +165,14 @@ func (a adbTransport) startShell(command string) (net.Conn, int, error) {
 }
 
 func (a adbTransport) push(target string, source io.Reader) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(a.context(), time.Minute)
 	defer cancel()
 	conn, err := a.open(ctx, "sync:", true)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	defer interruptADB(ctx, conn)()
 
 	path := []byte(target + ",33188") // regular file, mode 0644
 	if err := adbSyncSend(conn, "SEND", uint32(len(path)), path); err != nil {

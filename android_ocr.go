@@ -22,6 +22,9 @@ type androidOCR struct {
 }
 
 func (d *AndroidDevice) RecognizeScreenText(screenshot []byte) ([]TextRegion, error) {
+	if err := d.adb.context().Err(); err != nil {
+		return nil, err
+	}
 	if d.ocr.engine == nil {
 		runtimeFile := "onnxruntime.dll"
 		switch runtime.GOOS {
@@ -56,7 +59,7 @@ func (d *AndroidDevice) RecognizeScreenText(screenshot []byte) ([]TextRegion, er
 		}
 		d.ocr.engine = engine
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(d.adb.context(), 30*time.Second)
 	defer cancel()
 	lines, err := d.ocr.engine.RecognizeLines(ctx, screenshot)
 	if err != nil {

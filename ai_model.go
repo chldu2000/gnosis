@@ -80,7 +80,7 @@ type chatRequest struct {
 	Messages []chatMessage `json:"messages"`
 }
 
-func (m stepModel) decide(goal string, tree []Element, screenshot []byte) (modelDecision, error) {
+func (m stepModel) decide(parent context.Context, goal string, tree []Element, screenshot []byte) (modelDecision, error) {
 	mime := http.DetectContentType(screenshot)
 	if mime != "image/png" && mime != "image/jpeg" && mime != "image/webp" && mime != "image/gif" {
 		return modelDecision{}, errors.New("AI step screenshot is not a supported image")
@@ -106,7 +106,7 @@ func (m stepModel) decide(goal string, tree []Element, screenshot []byte) (model
 		return modelDecision{}, errors.New("could not encode AI model request")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), m.config.Timeout)
+	ctx, cancel := context.WithTimeout(parent, m.config.Timeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, m.config.Endpoint, bytes.NewReader(body))
 	if err != nil {

@@ -12,21 +12,34 @@ import (
 )
 
 func (r *caseRun) assert(assertion *Assertion, onFalse Result) (Result, *frame, error) {
-	deadline := r.clock.Now().Add(assertion.Timeout)
+	control := r.settings.control
+	deadline := r.clock.Now().Add(assertion.Timeout - control.pauseTime())
 	for {
 		observation := &frame{device: r.device}
+		if err := control.checkpoint(); err != nil {
+			return ResultError, observation, err
+		}
+		pausedBefore := control.pauseGeneration()
 		ok, err := checkAssertion(assertion, observation)
+		if checkpointErr := control.checkpoint(); checkpointErr != nil {
+			return ResultError, observation, checkpointErr
+		}
+		if pausedBefore != control.pauseGeneration() && err == nil {
+			continue
+		}
 		switch {
 		case err != nil:
 			return ResultError, observation, err
 		case ok:
 			return ResultPass, observation, nil
 		}
-		remaining := deadline.Sub(r.clock.Now())
+		remaining := deadline.Sub(r.clock.Now().Add(-control.pauseTime()))
 		if remaining <= 0 {
 			return onFalse, observation, nil
 		}
-		r.clock.Sleep(min(remaining, 500*time.Millisecond))
+		if err := r.wait(min(remaining, 500*time.Millisecond)); err != nil {
+			return ResultError, observation, err
+		}
 	}
 }
 

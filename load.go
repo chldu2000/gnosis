@@ -178,6 +178,17 @@ func Load(path string, options ...LoadOption) (Case, *Suite, error) {
 	if err != nil {
 		return Case{}, nil, &Rejection{File: path, Line: 0, Column: 0, Reason: "cannot read file"}
 	}
+	return loadData(path, data, settings)
+}
+
+// ValidateAsset applies the usual loader rules to an editor's proposed file
+// contents. Suite references are resolved from the proposed destination.
+func ValidateAsset(path string, data []byte) error {
+	_, _, err := loadData(path, data, loadSettings{})
+	return err
+}
+
+func loadData(path string, data []byte, settings loadSettings) (Case, *Suite, error) {
 	node, err := parseFile(path, data)
 	if err != nil {
 		return Case{}, nil, err
