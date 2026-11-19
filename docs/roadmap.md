@@ -34,8 +34,12 @@ Persist a report per started run (result, step conclusions, screenshots, traject
 
 **Feature dir:** `.scratch/mygo-desktop/` (create when starting)
 
-Native MyGo UI (`mygo_nowebview`): edit cases and suites via forms, pick a device, run, open the HTML report in the system browser, edit model settings. Same load and run core as the CLI. No embedded code editor, no WebView, no recording, no trajectory import.
+Native MyGo UI (`mygo_nowebview`): edit cases and suites via forms, pick a device, open the HTML report in the system browser, and edit model settings. First add local start, pause, resume, cancel, and progress to the shared Go core and connect the desktop app to an independent local Gnosis process over a Windows named pipe. Closing the window leaves the execution with that process. The CLI keeps its existing invocation. The desktop uses native forms and the system browser for reports.
+
+## After the first release · Connect Gnosis instances to cloud dispatch
+
+Add the instance side in this repository after local execution control is verified. It connects to the cloud, advertises available devices, validates task packages, applies control commands, and reports execution progress. A separate project implements the cloud scheduler, task storage, and operator interface. See [Execution control and cloud integration](execution-control.md) for the shared contract.
 
 ## Out of first release
 
-Trajectory-to-case export, recording, multi-device orchestration inside one process, non-Windows hosts, HarmonyOS versions that are not NEXT, license/auth.
+Trajectory-to-case export, recording, embedded code editor, WebView, multi-device orchestration inside one process, non-Windows hosts, HarmonyOS versions that are not NEXT, license/auth, and cloud dispatch integration.
