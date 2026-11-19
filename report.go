@@ -64,7 +64,22 @@ func (settings loadSettings) checkReportLocation(source string) error {
 
 func withinDirectory(directory, path string) bool {
 	relative, err := filepath.Rel(directory, path)
-	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return true
+	}
+	// A case-insensitive volume can resolve differently spelled paths to the same directory.
+	directoryInfo, err := os.Stat(directory)
+	if err != nil {
+		return false
+	}
+	for ancestor := path; ; ancestor = filepath.Dir(ancestor) {
+		if info, err := os.Stat(ancestor); err == nil && os.SameFile(directoryInfo, info) {
+			return true
+		}
+		if filepath.Dir(ancestor) == ancestor {
+			return false
+		}
+	}
 }
 
 func resolveReportPath(path string) string {

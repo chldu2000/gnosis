@@ -212,6 +212,54 @@ func TestCommandRejectsReportDirectoriesInsideReferencedCaseTree(t *testing.T) {
 	}
 }
 
+func TestCommandSavesReportInRequestedDirectory(t *testing.T) {
+	host, _, assets, _ := commandFixture(t, map[string]string{"case.yaml": "steps: [{wait: {duration: 1ms}}]\n"})
+	base := filepath.Dir(assets)
+	t.Chdir(base)
+	host.reportDirectory = func() (string, error) { return "", errors.New("default directory unavailable") }
+
+	for _, directory := range []string{"custom reports", filepath.Join(base, "absolute reports")} {
+		exit, stdout, stderr := runCommand(host, "--device", "selected", "--report-dir", directory, filepath.Join(assets, "case.yaml"))
+		if exit != 0 || stderr != "" {
+			t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout, stderr)
+		}
+		paths := readPaths(t, stdout, "case")
+		destination, err := filepath.Abs(directory)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := filepath.Dir(filepath.Dir(paths[0])); got != destination {
+			t.Fatalf("report directory = %q, want %q", got, destination)
+		}
+		if _, err := os.Stat(filepath.Join(filepath.Dir(paths[0]), "attachments")); err != nil {
+			t.Fatalf("read report attachments: %v", err)
+		}
+	}
+}
+
+func TestCommandRejectsReportDirectoryThroughCasePathAlias(t *testing.T) {
+	for _, alias := range []string{"ASSETS", "assets-link"} {
+		t.Run(alias, func(t *testing.T) {
+			host, device, assets, _ := commandFixture(t, map[string]string{"case.yaml": "name: Case\n"})
+			path := filepath.Join(filepath.Dir(assets), alias)
+			if alias == "assets-link" {
+				if err := os.Symlink(assets, path); err != nil {
+					t.Skipf("creating directory symlink: %v", err)
+				}
+			} else if _, err := os.Stat(path); os.IsNotExist(err) {
+				t.Skip("test directory uses case-sensitive paths")
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			root := filepath.Join(path, "new", "reports")
+			exit, stdout, stderr := runCommand(host, "--device", "selected", "--report-dir", root, filepath.Join(assets, "case.yaml"))
+			if exit == 0 || stdout != "" || !strings.Contains(stderr, "outside the case or suite directory tree") || device.serial != "" {
+				t.Fatalf("exit=%d stdout=%q stderr=%q, device=%q", exit, stdout, stderr, device.serial)
+			}
+		})
+	}
+}
+
 func TestCommandPrintsOneSuiteReportAndAccountsForAllResults(t *testing.T) {
 	for _, test := range []struct {
 		name    string

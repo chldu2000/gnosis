@@ -52,9 +52,10 @@ func (host commandHost) run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("gnosis", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	deviceID := flags.String("device", "", "Android device serial")
+	reportDir := flags.String("report-dir", "", "directory for this execution's report")
 	flags.StringVar(&config.Endpoint, "model-endpoint", config.Endpoint, "model endpoint for this invocation")
 	flags.StringVar(&config.Name, "model", config.Name, "model name for this invocation")
-	const usage = "usage: gnosis --device SERIAL [--model-endpoint URL] [--model NAME] FILE"
+	const usage = "usage: gnosis --device SERIAL [--report-dir DIR] [--model-endpoint URL] [--model NAME] FILE"
 	flags.Usage = func() { diagnose(usage) }
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -71,10 +72,14 @@ func (host commandHost) run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	source := flags.Arg(0)
-	root, err := host.reportDirectory()
-	if err != nil {
-		diagnose(err.Error())
-		return 1
+	root := *reportDir
+	if root == "" {
+		defaultRoot, err := host.reportDirectory()
+		if err != nil {
+			diagnose(err.Error())
+			return 1
+		}
+		root = defaultRoot
 	}
 	var sources []gnosis.CaseSource
 	testCase, suite, err := gnosis.Load(source, gnosis.ReportsOutsideCaseTree(root), gnosis.WithCaseSources(&sources))

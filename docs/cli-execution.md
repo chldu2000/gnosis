@@ -10,7 +10,13 @@ go build -o gnosis.exe ./cmd/gnosis
 
 参数放在用例或套件文件路径之前。套件中的文件全部载入后，程序才会连接指定设备。套件按引用顺序使用同一台设备，遇到失败或阻塞继续执行，遇到执行错误、设备离线或报告保存失败停止。
 
-每次已开始的执行生成一份可离线打开的 HTML 报告。Windows 版在 `%LOCALAPPDATA%\gnosis\reports` 下创建会话文件夹，其中 `report.html` 是报告入口，截图随报告保存到 `attachments/` 子目录。移动或分享报告时请复制整个会话文件夹。标准输出打印一次报告的绝对路径，诊断写到标准错误。所有用例均完成且结果为 `pass` 或 `executed` 时退出码为 `0`，其他结果以及参数、执行或保存错误返回 `1`。
+每次已开始的执行生成一份可离线打开的 HTML 报告。默认会话目录位于 Windows 的 `%LOCALAPPDATA%\gnosis\reports` 或 macOS 的 `~/Library/Caches/gnosis/reports` 下。传入 `--report-dir` 可为本次执行选择其他位置。相对路径从当前工作目录解析，指定的目录须位于用例、套件和套件引用的用例目录树之外。
+
+```powershell
+.\gnosis.exe --device SERIAL --report-dir '.\saved reports' .\cases\smoke.yaml
+```
+
+`report.html` 是报告入口，截图随报告保存到 `attachments/` 子目录。移动或分享报告时请复制整个会话文件夹。标准输出打印一次报告的绝对路径，诊断写到标准错误。所有用例均完成且结果为 `pass` 或 `executed` 时退出码为 `0`，其他结果以及参数、执行或保存错误返回 `1`。
 
 执行 AI 步骤时，程序从宿主环境读取 `GNOSIS_MODEL_ENDPOINT`、`GNOSIS_MODEL_NAME` 和 `GNOSIS_MODEL_API_KEY`。模型地址为完整的 Chat Completions URL。可在文件路径前传入 `--model-endpoint` 或 `--model` 覆盖本次执行的地址或模型名。普通用例无需设置这些变量。
 
