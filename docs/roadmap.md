@@ -40,6 +40,16 @@ Native MyGo UI (`mygo_nowebview`): edit cases and suites via forms, pick a devic
 
 Add the instance side in this repository after local execution control is verified. It connects to the cloud, advertises available devices, validates task packages, applies control commands, and reports execution progress. A separate project implements the cloud scheduler, task storage, and operator interface. See [Execution control and cloud integration](execution-control.md) for the shared contract.
 
+## After the first release · AI-assisted case authoring
+
+**Feature dir:** `.scratch/ai-assisted-case-authoring/` (create when starting)
+
+This milestone can proceed independently of cloud dispatch and macOS desktop work. Start with shared Go logic and the CLI, then add the workflow to the Windows workbench.
+
+1. **Generate and review a draft.** Use the structured record of a just-completed, passing standalone case execution and the case version loaded at its start. The case must contain at least one AI step, and every AI step must have recorded at least one action. Keep the original actions and assertions in order and replace each AI step with its recorded actions and parameters. Flag coordinate taps for the author to review. After review, the author can explicitly save the draft as a new case in the existing YAML format and add it to a suite through the existing workflow.
+2. **Verify on an Android device through the CLI.** Run the saved case again from the same starting state with no model configured and verify that it passes. Prepare a second test state in which the same actions can run but the expected condition is false. Verify that the expected assertion fails and is recorded in the report.
+3. **Connect the Windows workbench.** Open the draft in the existing editor for review and Save As. Put the controls that start a trial execution or rerun at the top of the right-hand execution pane. Each execution uses the existing session report and attachment layout.
+
 ## Out of first release
 
 Trajectory-to-case export, recording, embedded code editor, WebView, multi-device orchestration inside one process, non-Windows hosts, HarmonyOS versions that are not NEXT, license/auth, and cloud dispatch integration.
