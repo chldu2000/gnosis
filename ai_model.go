@@ -27,7 +27,8 @@ swipe: from_x, from_y, to_x, to_y, optional duration (default "300ms")
 type: text (replace all text in the current focus)
 key: name ("back" or "home")
 wait: duration
-Locator fields: id, text, description, type (one or more strings), and optional positive integer index (1-based).
+Locator fields: id, text, description, type, optional positive index (1-based). Supply a field or a relative rule.
+A relative rule has a unique anchor (id/text/description/type) and relation within, left_of, right_of, above or below. For within, levels is the number of parents to ascend from the anchor (default 0). Example: {"type":"Switch","relative":{"anchor":{"text":"Notifications"},"relation":"within","levels":1}}.
 Coordinates are ratios between 0 and 1 inclusive. Durations are nonnegative integers with ms or s units in a string.`
 
 const maxModelResponseBytes = 64 << 10

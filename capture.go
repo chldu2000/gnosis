@@ -57,11 +57,15 @@ func observeInterface(device Device) (*InterfaceCapture, error) {
 func matchTree(l Locator, tree []Element) []Element {
 	var matches []Element
 	for _, e := range tree {
-		if matchesField(l.ID, e.ID) && matchesField(l.Text, e.Text) && matchesField(l.Description, e.Description) && matchesField(l.Type, e.Type) {
+		if matchesElement(l, e) {
 			matches = append(matches, e)
 		}
 	}
 	return matches
+}
+
+func matchesElement(l Locator, e Element) bool {
+	return matchesField(l.ID, e.ID) && matchesField(l.Text, e.Text) && matchesField(l.Description, e.Description) && matchesField(l.Type, e.Type)
 }
 
 type LocatorCandidate struct {

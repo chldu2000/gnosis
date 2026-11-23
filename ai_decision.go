@@ -81,8 +81,8 @@ func decodeModelDecision(content, secret string) (modelDecision, error) {
 // readDecisionNode keeps exact JSON scalar types when passing the decision
 // to the shared action decoder. It rejects duplicate fields, arrays and null.
 func readDecisionNode(decoder *json.Decoder, secret string, depth int) (*yaml.Node, error) {
-	// The deepest supported object is params.locator.
-	if depth > 3 {
+	// Scalar fields of params.locator.relative.anchor are at depth five.
+	if depth > 5 {
 		return nil, errModelDecision
 	}
 	token, err := decoder.Token()

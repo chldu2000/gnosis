@@ -43,6 +43,10 @@ var locatorFields = []Field{
 	field("id", "元素 ID", "!!str", true), field("text", "显示文本", "!!str", true),
 	field("description", "描述", "!!str", true), field("type", "控件类型", "!!str", true),
 	field("index", "匹配序号", "!!int", true),
+	field("relative.relation", "参照关系", "!!str", true, "within", "right_of", "left_of", "above", "below"),
+	field("relative.levels", "从参照向上的层数", "!!int", true),
+	field("relative.anchor.id", "参照 ID", "!!str", true), field("relative.anchor.text", "参照文本", "!!str", true),
+	field("relative.anchor.description", "参照描述", "!!str", true), field("relative.anchor.type", "参照类型", "!!str", true),
 }
 
 func Fields(kind, check string) []Field {

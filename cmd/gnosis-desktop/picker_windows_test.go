@@ -15,6 +15,84 @@ import (
 	"gnosis/internal/assetform"
 )
 
+func TestPickRelativeLocatorFromScreenshot(t *testing.T) {
+	for _, tc := range []struct {
+		name                     string
+		flat, duplicate, offline bool
+		want                     string
+	}{
+		{"settings-row", false, false, false, "within"}, {"offline-flat", true, false, true, "right_of"}, {"duplicate-label", false, true, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &desktop{width: 1040}
+			doc := app.addDocument(assetform.New(false))
+			var pixels bytes.Buffer
+			size := image.Pt(200, 120)
+			if err := png.Encode(&pixels, image.NewRGBA(image.Rectangle{Max: size})); err != nil {
+				t.Fatal(err)
+			}
+			tree := []gnosis.Element{{Type: "Screen", Bounds: image.Rectangle{Max: size}}}
+			for row, label := range []string{"消息通知", "声音"} {
+				y := row * 60
+				depth := 1
+				if !tc.flat {
+					tree = append(tree, gnosis.Element{Type: "Row", Depth: 1, Bounds: image.Rect(0, y, 200, y+60)})
+					depth++
+				}
+				if tc.duplicate {
+					label = "消息通知"
+				}
+				var id string
+				if !tc.duplicate {
+					id = []string{"first-row-label", "second-row-label"}[row]
+				}
+				tree = append(tree, gnosis.Element{ID: id, Text: label, Depth: depth, Bounds: image.Rect(5, y+5, 85, y+50)},
+					gnosis.Element{Type: "Switch", Depth: depth, Bounds: image.Rect(150, y+5, 190, y+50)})
+			}
+			app.picker = elementPicker{open: true, doc: doc, offline: tc.offline}
+			app.picker.display(&gnosis.InterfaceCapture{Size: size, Screenshot: pixels.Bytes(), Elements: tree})
+			view := ui.NewTester(app.view, 1040, 740)
+			tapPicture := func(x, y float32) {
+				screen := locate(t, view, "设备界面截图")
+				view.ClickAt(screen.X+x/200*screen.W, screen.Y+y/120*screen.H)
+			}
+			tapPicture(165, 25)
+			click(t, view, "用参照元素定位")
+			if view.HasText("新增点击") {
+				t.Fatal("could write an incomplete rule")
+			}
+			tapPicture(45, 25)
+			if !view.HasText("写入目标 · Switch") {
+				t.Fatal("reference click replaced the target")
+			}
+			if tc.duplicate {
+				if view.HasText("新增点击") || !view.HasText("参照匹配 2 个元素，请选择能唯一识别参照的条件。") {
+					t.Fatalf("ambiguous reference: %v", view.Texts())
+				}
+				click(t, view, "更换参照")
+				click(t, view, "取消相对定位")
+				if !view.HasText("新增点击") || doc.Rows() != 0 {
+					t.Fatal("cancel did not restore direct selection")
+				}
+				return
+			}
+			click(t, view, "新增点击")
+			path := filepath.Join(t.TempDir(), "settings.yaml")
+			if err := doc.Save(path); err != nil {
+				t.Fatal(err)
+			}
+			c, _, err := gnosis.Load(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			l := c.Steps[0].Locator
+			if l.Type == nil || *l.Type != "Switch" || l.Relative == nil || l.Relative.Relation != tc.want || l.Relative.Anchor.Text == nil || *l.Relative.Anchor.Text != "消息通知" {
+				t.Fatalf("unexpected locator: %+v", l)
+			}
+		})
+	}
+}
+
 func TestOfflineReviewWithMissingBeforeImage(t *testing.T) {
 	app := &desktop{width: 1040}
 	source := &gnosis.CaseDraft{
@@ -130,7 +208,9 @@ func TestReviewSwitchesScreensAtSameScaleAndKeepsOriginalTap(t *testing.T) {
 		}
 	}
 	draft := &gnosis.CaseDraft{YAML: "steps: [{tap_at: {x: 0.25, y: 0.6}}]", Expected: []string{"Amber detail"},
-		Turns: []gnosis.DraftTurn{{Row: 0, Coordinate: true, Before: &gnosis.InterfaceCapture{Size: before, Elements: []gnosis.Element{{Text: "Amber", Bounds: image.Rectangle{Max: before}}}}, BeforeImage: "before.png", AfterImage: "after.png"}},
+		Turns: []gnosis.DraftTurn{{Row: 0, Coordinate: true, Before: &gnosis.InterfaceCapture{Size: before, Elements: []gnosis.Element{
+			{Text: "Featured", Bounds: image.Rect(0, 0, 100, 50)}, {Text: "Amber", Bounds: image.Rect(0, 100, 100, 150)},
+		}}, BeforeImage: "before.png", AfterImage: "after.png"}},
 	}
 	form, err := assetform.FromDraft(draft)
 	if err != nil {
@@ -156,6 +236,11 @@ func TestReviewSwitchesScreensAtSameScaleAndKeepsOriginalTap(t *testing.T) {
 	click(t, view, "点击前")
 	if !view.HasText("写入目标 · Amber") || screen != locate(t, view, "设备界面截图") {
 		t.Fatal("selection or scale lost switching back")
+	}
+	click(t, view, "用参照元素定位")
+	click(t, view, "Featured")
+	if app.picker.relativeLocator().Relative.Relation != "below" {
+		t.Fatal("offline reference was not resolved from the saved capture")
 	}
 	click(t, view, "填入当前步骤")
 	if doc.StepKind(0) != "tap" {

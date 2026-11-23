@@ -128,11 +128,19 @@ type Wait struct {
 // A nil string condition is omitted; a pointer to "" is an explicit empty condition.
 // Index is the 1-based match ordinal. Zero means the file did not set an index.
 type Locator struct {
-	ID          *string
-	Text        *string
-	Description *string
-	Type        *string
-	Index       int
+	ID          *string          `yaml:"id,omitempty"`
+	Text        *string          `yaml:"text,omitempty"`
+	Description *string          `yaml:"description,omitempty"`
+	Type        *string          `yaml:"type,omitempty"`
+	Index       int              `yaml:"index,omitempty"`
+	Relative    *RelativeLocator `yaml:"relative,omitempty" json:",omitempty"`
+}
+
+type RelativeLocator struct {
+	Relation string  `yaml:"relation"`
+	Anchor   Locator `yaml:"anchor"`
+	// For within, ascend this many parents from the anchor to reach the shared container.
+	Levels int `yaml:"levels,omitempty"`
 }
 
 // Suite is a loaded suite: cases in file order. A suite has no name.
@@ -1131,6 +1139,10 @@ func decodeTap(path string, key, node *yaml.Node) (Locator, error) {
 }
 
 func decodeLocator(path string, key, node *yaml.Node) (Locator, error) {
+	return decodeLocatorFields(path, key, node, false)
+}
+
+func decodeLocatorFields(path string, key, node *yaml.Node, anchor bool) (Locator, error) {
 	if node.Kind != yaml.MappingNode {
 		return Locator{}, reject(path, node, "locator must be a mapping")
 	}
@@ -1152,7 +1164,20 @@ func decodeLocator(path string, key, node *yaml.Node) (Locator, error) {
 			condition = &loc.Description
 		case "type":
 			condition = &loc.Type
+		case "relative":
+			if anchor {
+				return Locator{}, reject(path, field, "an anchor cannot contain a relative locator")
+			}
+			relative, err := decodeRelative(path, val)
+			if err != nil {
+				return Locator{}, err
+			}
+			loc.Relative = relative
+			continue
 		case "index":
+			if anchor {
+				return Locator{}, reject(path, field, "an anchor must be unique without an index")
+			}
 			if val.Kind != yaml.ScalarNode || val.Tag != "!!int" {
 				return Locator{}, reject(path, val, `field "index" must be an integer`)
 			}
@@ -1174,10 +1199,55 @@ func decodeLocator(path string, key, node *yaml.Node) (Locator, error) {
 		}
 		*condition = &decoded
 	}
-	if loc.ID == nil && loc.Text == nil && loc.Description == nil && loc.Type == nil {
+	if loc.ID == nil && loc.Text == nil && loc.Description == nil && loc.Type == nil && loc.Relative == nil {
 		return Locator{}, reject(path, key, "locator requires id, text, description, or type")
 	}
 	return loc, nil
+}
+
+func decodeRelative(path string, node *yaml.Node) (*RelativeLocator, error) {
+	if node.Kind != yaml.MappingNode {
+		return nil, reject(path, node, "relative must be a mapping")
+	}
+	var r RelativeLocator
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		field, val := node.Content[i], node.Content[i+1]
+		if err := noteKey(path, seen, field); err != nil {
+			return nil, err
+		}
+		switch field.Value {
+		case "anchor":
+			anchor, err := decodeLocatorFields(path, field, val, true)
+			if err != nil {
+				return nil, err
+			}
+			r.Anchor = anchor
+		case "relation":
+			switch val.Value {
+			case "within", "right_of", "left_of", "above", "below":
+				r.Relation = val.Value
+			default:
+				return nil, reject(path, val, "invalid relative locator relation")
+			}
+			if val.Kind != yaml.ScalarNode || val.Tag != "!!str" {
+				return nil, reject(path, val, "relation must be a string")
+			}
+		case "levels":
+			if val.Kind != yaml.ScalarNode || val.Tag != "!!int" || val.Decode(&r.Levels) != nil || r.Levels < 0 {
+				return nil, reject(path, val, "levels must be a nonnegative integer")
+			}
+		default:
+			return nil, reject(path, field, fmt.Sprintf("unknown field %q", field.Value))
+		}
+	}
+	if !seen["anchor"] || !seen["relation"] {
+		return nil, reject(path, node, "relative requires an anchor and relation")
+	}
+	if seen["levels"] && r.Relation != "within" {
+		return nil, reject(path, node, "levels only applies to within")
+	}
+	return &r, nil
 }
 
 func decodeString(path string, key, val *yaml.Node) (string, error) {

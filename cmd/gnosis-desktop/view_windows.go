@@ -327,7 +327,9 @@ func (a *desktop) stepFields(c *ui.Context) {
 			}
 		}
 		for _, field := range assetform.Fields(kind, check) {
-			a.renderField(c, row, kind, check, field)
+			if a.doc.FieldVisible(row, field) {
+				a.renderField(c, row, kind, check, field)
+			}
 		}
 	})
 }

@@ -471,5 +471,14 @@ func reportLocator(locator Locator) []reportParam {
 	if locator.Index != 0 {
 		params = append(params, reportParam{Name: "locator.index", Value: strconv.Itoa(locator.Index)})
 	}
+	if r := locator.Relative; r != nil {
+		params = append(params, reportParam{Name: "locator.relative.relation", Value: r.Relation})
+		if r.Relation == "within" {
+			params = append(params, reportParam{Name: "locator.relative.levels", Value: strconv.Itoa(r.Levels)})
+		}
+		for _, p := range reportLocator(r.Anchor) {
+			params = append(params, reportParam{Name: strings.Replace(p.Name, "locator.", "locator.relative.anchor.", 1), Value: p.Value})
+		}
+	}
 	return params
 }

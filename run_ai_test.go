@@ -378,7 +378,7 @@ func TestRunAIUsesTheSameActionsAsScriptedSteps(t *testing.T) {
 	second.Bounds = image.Rect(3, 5, 7, 9)
 	newDevice := func() *imageDevice {
 		return &imageDevice{testDevice: &testDevice{
-			size: image.Pt(8, 6), trees: [][]gnosis.Element{{element, second}},
+			size: image.Pt(8, 6), trees: [][]gnosis.Element{{element, second, {Text: "参照", Bounds: image.Rect(0, 5, 2, 9)}}},
 			regions: [][]gnosis.TextRegion{{{Text: "像素", Bounds: second.Bounds}}},
 		}}
 	}
@@ -390,6 +390,7 @@ func TestRunAIUsesTheSameActionsAsScriptedSteps(t *testing.T) {
 		{"launch", `{"app":"example"}`, gnosis.Step{Launch: &gnosis.Launch{App: "example"}}},
 		{"launch", `{"app":"example","entry":".Main"}`, gnosis.Step{Launch: &gnosis.Launch{App: "example", Entry: ".Main"}}},
 		{"tap", `{"locator":` + locatorJSON + `}`, gnosis.Step{Locator: locator}},
+		{"tap", `{"locator":{"type":"button","relative":{"relation":"right_of","anchor":{"text":"参照"}}}}`, gnosis.Step{Locator: gnosis.Locator{Type: locatorString("button"), Relative: &gnosis.RelativeLocator{Relation: "right_of", Anchor: gnosis.Locator{Text: locatorString("参照")}}}}},
 		{"tap", `{"locator":{"text":"像素"}}`, gnosis.Step{Locator: gnosis.Locator{Text: locatorString("像素")}}},
 		{"long_press", `{"locator":` + locatorJSON + `}`, gnosis.Step{LongPress: &gnosis.LongPress{Locator: locator, Duration: 800 * time.Millisecond}}},
 		{"long_press", `{"locator":` + locatorJSON + `,"duration":"1s"}`, gnosis.Step{LongPress: &gnosis.LongPress{Locator: locator, Duration: time.Second}}},

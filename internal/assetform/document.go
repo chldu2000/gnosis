@@ -85,16 +85,8 @@ func (d *Document) ApplyLocator(i int, l gnosis.Locator) error {
 		return errors.New("此步骤没有定位器")
 	}
 	target := mapping()
-	for _, item := range []struct {
-		k string
-		v *string
-	}{{"id", l.ID}, {"text", l.Text}, {"description", l.Description}, {"type", l.Type}} {
-		if item.v != nil {
-			setScalar(target, item.k, "!!str", *item.v)
-		}
-	}
-	if l.Index > 0 {
-		setScalar(target, "index", "!!int", strconv.Itoa(l.Index))
+	if err := target.Encode(l); err != nil {
+		return err
 	}
 	set(node, key, target)
 	d.dirty = true
@@ -308,6 +300,9 @@ func (d *Document) SetField(i int, field Field, text string) {
 	for _, key := range field.path[:len(field.path)-1] {
 		row = ensureMapping(row, key)
 	}
+	if field.path[len(field.path)-1] == "relation" && text != "within" {
+		remove(row, "levels")
+	}
 	tag := field.tag
 	if tag == "number" {
 		tag = "!!float"
@@ -319,11 +314,28 @@ func (d *Document) SetField(i int, field Field, text string) {
 }
 
 func (d *Document) ClearField(i int, field Field) {
+	if field.path[len(field.path)-1] == "relation" {
+		field.path = field.path[:len(field.path)-1]
+	}
 	row := d.rows()[i]
 	for _, key := range field.path[:len(field.path)-1] {
 		row = child(row, key)
 	}
 	d.dirty = remove(row, field.path[len(field.path)-1]) || d.dirty
+}
+
+// Show the reference fields once an author chooses a relative relation.
+func (d *Document) FieldVisible(i int, field Field) bool {
+	j := slices.Index(field.path, "relative")
+	if j < 0 || field.path[j+1] == "relation" {
+		return true
+	}
+	node := d.rows()[i]
+	for _, k := range field.path[:j+1] {
+		node = child(node, k)
+	}
+	relation := child(node, "relation")
+	return relation != nil && (field.path[j+1] != "levels" || relation.Value == "within")
 }
 
 func (d *Document) Validate() error {

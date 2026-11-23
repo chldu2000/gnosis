@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+var errRelativeScopeMissing = errors.New("relative locator anchor or container was not found")
+
 func (r *caseRun) assert(assertion *Assertion, onFalse Result) (Result, *frame, error) {
 	control := r.settings.control
 	deadline := r.clock.Now().Add(assertion.Timeout - control.pauseTime())
@@ -21,6 +23,10 @@ func (r *caseRun) assert(assertion *Assertion, onFalse Result) (Result, *frame, 
 		}
 		pausedBefore := control.pauseGeneration()
 		ok, err := checkAssertion(assertion, observation)
+		if errors.Is(err, errRelativeScopeMissing) {
+			// Even an absence assertion needs its reference to establish the scope.
+			ok, err = false, nil
+		}
 		if checkpointErr := control.checkpoint(); checkpointErr != nil {
 			return ResultError, observation, checkpointErr
 		}
@@ -117,8 +123,22 @@ func locate(locator Locator, observation *frame, allowScreenText bool) ([]Elemen
 	if err != nil {
 		return nil, fmt.Errorf("read control tree: %w", err)
 	}
-	matches := matchTree(locator, tree)
-	if len(matches) == 0 && allowScreenText && locator.Text != nil &&
+	var matches []Element
+	if locator.Relative != nil {
+		preview := (&InterfaceCapture{Elements: tree}).PreviewRelative(locator)
+		if len(preview.Anchors) > 1 {
+			return nil, fmt.Errorf("relative locator expected one anchor, found %d", len(preview.Anchors))
+		}
+		if len(preview.Anchors) == 0 || (locator.Relative.Relation == "within" && preview.Container < 0) {
+			return nil, errRelativeScopeMissing
+		}
+		for _, i := range preview.Targets {
+			matches = append(matches, tree[i])
+		}
+	} else {
+		matches = matchTree(locator, tree)
+	}
+	if locator.Relative == nil && len(matches) == 0 && allowScreenText && locator.Text != nil &&
 		locator.ID == nil && locator.Description == nil && locator.Type == nil {
 		regions, err := observation.screenText()
 		if err != nil {

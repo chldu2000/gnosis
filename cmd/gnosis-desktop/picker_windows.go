@@ -28,6 +28,7 @@ type elementPicker struct {
 	showAfter                         bool
 	afterImage                        ui.ImageSource
 	afterProblem                      string
+	relative                          *relativeSelection
 }
 
 func (a *desktop) openCaseDraft(report string) {
@@ -106,6 +107,11 @@ func (a *desktop) openTurnReview(doc *openedDocument, turn gnosis.DraftTurn) {
 }
 
 func (p *elementPicker) selectNode(index int) {
+	if p.relative != nil && p.relative.anchor < 0 {
+		p.pickReference(index)
+		return
+	}
+	p.relative = nil
 	p.selected, p.candidate = index, 0
 	p.choices = p.capture.Candidates(index)
 	for i, choice := range p.choices {
@@ -121,6 +127,7 @@ func matchesSearch(e gnosis.Element, filter string) bool {
 }
 
 func (p *elementPicker) display(capture *gnosis.InterfaceCapture) {
+	p.relative = nil
 	p.choices = nil
 	p.capture, p.bitmap, p.selected, p.candidate = nil, nil, -1, 0
 	if capture.Size.X <= 0 || capture.Size.Y <= 0 {
@@ -276,6 +283,10 @@ func (a *desktop) pickerView(c *ui.Context) {
 					if p.selected >= 0 {
 						e := p.capture.Elements[p.selected]
 						ui.Text(c, "写入目标 · "+elementLabel(e)).SingleLine().Tooltip(elementLabel(e))
+						if p.relative != nil && p.relative.anchor < 0 {
+							a.relativeView(c, size)
+							return
+						}
 						if !matchesSearch(e, filter) {
 							ui.Text(c, "当前筛选已隐藏该目标。请选择搜索结果或清除筛选后再写入。").Wrap()
 							if ui.Button(c, "清除筛选").Clicked() {
@@ -284,6 +295,14 @@ func (a *desktop) pickerView(c *ui.Context) {
 							return
 						}
 						choices := p.choices
+						if p.relative != nil {
+							a.relativeView(c, size)
+							return
+						}
+						if ui.Button(c, "用参照元素定位").Clicked() {
+							p.beginReference()
+							return
+						}
 						ui.Scroll(c.Key("locator-options")).MaxHeight(size.Y * 0.46).FillWidth().Children(func() {
 							ui.Column(c).Gap(4).FillWidth().Children(func() { a.locatorView(c, choices) })
 						})
@@ -361,6 +380,9 @@ func (p *elementPicker) screenView(c *ui.Context, scale float32) {
 	w, h := float32(size.X)*scale, float32(size.Y)*scale
 	screen := ui.Image(c.Key("screenshot"), p.bitmap).Label("设备界面截图").Width(w).Height(h).Shrink(0)
 	screen.DrawOver(func(painter *ui.Painter, r ui.Rect) {
+		if p.relative != nil {
+			p.drawRelative(painter, r, scale)
+		}
 		if p.selected >= 0 {
 			bounds := p.capture.Elements[p.selected].Bounds.Intersect(image.Rectangle{Max: size})
 			if !bounds.Empty() {
