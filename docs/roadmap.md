@@ -50,6 +50,8 @@ This milestone can proceed independently of cloud dispatch and macOS desktop wor
 2. **Verify on an Android device through the CLI.** Run the saved case again from the same starting state with no model configured and verify that it passes. Prepare a second test state in which the same actions can run but the expected condition is false. Verify that the expected assertion fails and is recorded in the report.
 3. **Connect the Windows workbench.** Open the draft in the existing editor for review and Save As. Put the controls that start a trial execution or rerun at the top of the right-hand execution pane. Each execution uses the existing session report and attachment layout.
 
+For the pilot, compare manual and AI-assisted authoring on the same Android scenario. Measure elapsed time through the first independent passing rerun, including time spent reviewing actions and correcting locators or assertions. Record the starting screen, account and test data so both reruns exercise the intended path. During draft review, show the original goal alongside the recorded actions, screenshots and expected assertion. For example, selecting a search-history entry can produce the expected result while bypassing the search button under test. See the [AI step authoring guidance](ai-execution.md) and [CLI regression workflow](cli-execution.md).
+
 ## Out of first release
 
 Trajectory-to-case export, recording, embedded code editor, WebView, multi-device orchestration inside one process, non-Windows hosts, HarmonyOS versions that are not NEXT, license/auth, and cloud dispatch integration.
