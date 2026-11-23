@@ -48,9 +48,20 @@ This milestone can proceed independently of cloud dispatch and macOS desktop wor
 
 1. **Generate and review a draft.** Use the structured record of a just-completed, passing standalone case execution and the case version loaded at its start. The case must contain at least one AI step, and every AI step must have recorded at least one action. Keep the original actions and assertions in order and replace each AI step with its recorded actions and parameters. Flag coordinate taps for the author to review. After review, the author can explicitly save the draft as a new case in the existing YAML format and add it to a suite through the existing workflow.
 2. **Verify on an Android device through the CLI.** Run the saved case again from the same starting state with no model configured and verify that it passes. Prepare a second test state in which the same actions can run but the expected condition is false. Verify that the expected assertion fails and is recorded in the report.
-3. **Connect the Windows workbench.** Open the draft in the existing editor for review and Save As. Put the controls that start a trial execution or rerun at the top of the right-hand execution pane. Each execution uses the existing session report and attachment layout.
+3. **Connect the Windows workbench.** Open the draft in the existing editor for review and Save As. Put the controls that start a trial execution or rerun at the top of the right-hand execution pane. Each execution uses the existing session report and attachment layout. Use [visual element selection](#after-the-first-release--visual-element-selection) to review flagged coordinate taps when the picker is available.
 
 For the pilot, compare manual and AI-assisted authoring on the same Android scenario. Measure elapsed time through the first independent passing rerun, including time spent reviewing actions and correcting locators or assertions. Record the starting screen, account and test data so both reruns exercise the intended path. During draft review, show the original goal alongside the recorded actions, screenshots and expected assertion. For example, selecting a search-history entry can produce the expected result while bypassing the search button under test. See the [AI step authoring guidance](ai-execution.md) and [CLI regression workflow](cli-execution.md).
+
+## After the first release · Visual element selection
+
+**Feature dir:** `.scratch/visual-element-selection/` (create when starting)
+
+Deliver manual element selection for Android devices in the Windows workbench as an independent milestone. An author can use it with a new case before configuring a model or running an AI step. CLI draft generation can ship independently. Both editing workflows share the screenshot, hierarchical control tree with element bounds, screen dimensions, locator matching logic and existing step form.
+
+1. **Select an element from a connected device.** The author navigates on the device and refreshes the view on demand through the local execution process, respecting device ownership. Selecting an element in the screenshot highlights its node in the tree and vice versa. Show its attributes, candidate locators and the number of elements each locator matches in that capture. Let the author fill a locator in an existing step or create an action or assertion. Verify that selecting a notification switch leaves its state untouched while the author writes a tap or chooses the expected `checked` value.
+2. **Review an AI coordinate tap offline.** For each AI coordinate tap that needs review, save its pre-action screenshot, hierarchical control tree and screen dimensions in the execution session, linked to the corresponding trajectory turn. Keep screenshots as file attachments. The same picker opens that observation after the device disconnects. The author can replace the coordinates in the draft with a locator and use the post-action screenshot to check where the tap led.
+
+For acceptance, use a passing case in which an AI coordinate tap opens a product from a list. Disconnect the device and use the saved list view to replace the tap with a locator. Reconnect, move the product to a different row, then rerun the saved case with no model configured. The existing assertion must identify the intended product on the detail screen.
 
 ## Out of first release
 
