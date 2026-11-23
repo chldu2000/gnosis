@@ -129,7 +129,7 @@ func (p *elementPicker) display(capture *gnosis.InterfaceCapture) {
 		return
 	}
 	p.capture, p.bitmap, p.selected, p.candidate = capture, bitmap, -1, 0
-	p.problem, p.search = "", ""
+	p.problem = ""
 }
 
 func (a *desktop) openLivePicker(doc *openedDocument) {
@@ -171,8 +171,22 @@ func (a *desktop) refreshCapture() {
 
 func (a *desktop) pickerView(c *ui.Context) {
 	p := &a.picker
-	ui.Modal(c.Key("element-picker"), &p.open, func() {
-		ui.Column(c).Width(min(790, float32(a.width)-36)).Height(510).Padding(12).Gap(6).Children(func() {
+	ui.DialogBase(c.Key("element-picker"), &p.open, func(back, panel ui.Element) {
+		winW, winH := c.Size()
+		maxW, maxH := max(1, winW-24), max(1, winH-24)
+		if a.pickerSize.X == 0 {
+			a.pickerSize = ui.Point{X: 820, Y: 550}
+		}
+		clampSize := func(w, h float32) ui.Point {
+			return ui.Point{X: min(max(560, w), maxW), Y: min(max(380, h), maxH)}
+		}
+		size := clampSize(a.pickerSize.X, a.pickerSize.Y)
+		if a.pickerExpanded {
+			size = ui.Point{X: maxW, Y: maxH}
+		}
+		back.Background(ui.RGBA(0, 0, 0, 0.4))
+		panel.Label("元素选择器").Width(size.X).Height(size.Y).Radius(8).Background(c.Theme().Background).Border(1, c.Theme().Border)
+		ui.Column(c).Fill().Padding(12).Gap(6).Children(func() {
 			ui.Row(c).FillWidth().Gap(6).Children(func() {
 				title := "从设备选元素"
 				if p.offline {
@@ -181,6 +195,13 @@ func (a *desktop) pickerView(c *ui.Context) {
 				ui.Text(c, title).Bold().Grow(1)
 				if !p.offline && ui.Button(c, "刷新界面").Disabled(p.busy).Clicked() {
 					a.refreshCapture()
+				}
+				label := "最大化"
+				if a.pickerExpanded {
+					label = "还原"
+				}
+				if ui.Button(c.Key("expand"), label).Clicked() {
+					a.pickerExpanded = !a.pickerExpanded
 				}
 				if ui.Button(c, "关闭").Clicked() {
 					p.open = false
@@ -197,18 +218,20 @@ func (a *desktop) pickerView(c *ui.Context) {
 				return
 			}
 			ui.Row(c.Key("capture")).Grow(1).MinHeight(0).FillWidth().Gap(10).Children(func() {
-				p.screenView(c)
+				p.screenView(c, size.X*0.46, size.Y-108)
 				ui.Column(c.Key("tree")).Grow(1).MinWidth(0).FillHeight().Gap(4).Children(func() {
 					ui.TextInput(c, &p.search).Label("搜索元素").Placeholder("搜索 ID、文本、描述或类型").FillWidth()
 					ui.Scroll(c.Key("nodes")).FillWidth().Grow(1).MinHeight(0).Children(func() {
 						ui.Column(c).FillWidth().Children(func() {
 							filter := strings.ToLower(strings.TrimSpace(p.search))
+							found := false
 							for i, e := range p.capture.Elements {
 								label := elementLabel(e)
 								if filter != "" && !strings.Contains(strings.ToLower(strings.Join([]string{e.ID, e.Description, e.Text, e.Type}, " ")), filter) {
 									continue
 								}
 								text := strings.Repeat("  ", max(0, min(12, e.Depth))) + label
+								found = true
 								var item ui.Element
 								if i == p.selected {
 									item = ui.PrimaryButton(c.Key(i), text)
@@ -222,15 +245,31 @@ func (a *desktop) pickerView(c *ui.Context) {
 									p.selected, p.candidate = i, 0
 								}
 							}
+							if !found {
+								ui.Text(c, "没有匹配的元素").TextColor(c.Theme().TextMuted)
+							}
 							p.scrollToNode = false
 						})
 					})
 					if p.selected >= 0 {
-						a.locatorView(c)
+						choices := p.capture.Candidates(p.selected)
+						ui.Scroll(c.Key("locator-options")).MaxHeight(size.Y * 0.46).FillWidth().Children(func() {
+							ui.Column(c).Gap(4).FillWidth().Children(func() { a.locatorView(c, choices) })
+						})
+						if len(choices) > 0 {
+							a.pickerActions(c, choices[p.candidate].Locator)
+						}
 					}
 				})
 			})
 		})
+		if !a.pickerExpanded {
+			grip := ui.Text(c.Key("resize"), "◢").Absolute().Right(0).Bottom(0).Width(24).Height(22).Label("调整选择器大小").Tooltip("拖动调整大小").TextColor(c.Theme().TextMuted).Cursor(ui.CursorResizeNWSE)
+			if dx, dy, drag := grip.Dragged(); drag && (dx != 0 || dy != 0) {
+				// The dialog stays centered, so each edge travels half the size change.
+				a.pickerSize = clampSize(size.X+2*dx, size.Y+2*dy)
+			}
+		}
 	})
 }
 
@@ -243,9 +282,9 @@ func elementLabel(e gnosis.Element) string {
 	return "无名称元素"
 }
 
-func (p *elementPicker) screenView(c *ui.Context) {
+func (p *elementPicker) screenView(c *ui.Context, width, height float32) {
 	size := p.capture.Size
-	scale := min(float32(320)/float32(size.X), float32(432)/float32(size.Y))
+	scale := min(width/float32(size.X), max(1, height)/float32(size.Y))
 	w, h := float32(size.X)*scale, float32(size.Y)*scale
 	screen := ui.Image(c.Key("screenshot"), p.bitmap).Label("设备界面截图").Width(w).Height(h).Shrink(0)
 	if p.selected >= 0 {
@@ -276,7 +315,7 @@ func locatorLabel(l gnosis.Locator) string {
 	return strings.Join(parts, " · ")
 }
 
-func (a *desktop) locatorView(c *ui.Context) {
+func (a *desktop) locatorView(c *ui.Context, cs []gnosis.LocatorCandidate) {
 	p := &a.picker
 	e := p.capture.Elements[p.selected]
 	ui.Text(c, fmt.Sprintf("%s · %v", e.Type, e.Bounds)).Wrap().FontSize(12)
@@ -288,7 +327,6 @@ func (a *desktop) locatorView(c *ui.Context) {
 			ui.Text(c, fmt.Sprintf("%s = %t", attr.key, *attr.value)).FontSize(12)
 		}
 	}
-	cs := p.capture.Candidates(p.selected)
 	if len(cs) == 0 {
 		ui.Text(c, "该元素没有可用的定位条件")
 		return
@@ -305,7 +343,10 @@ func (a *desktop) locatorView(c *ui.Context) {
 			p.candidate = i
 		}
 	}
-	loc := cs[p.candidate].Locator
+}
+
+func (a *desktop) pickerActions(c *ui.Context, loc gnosis.Locator) {
+	p := &a.picker
 	doc := p.doc
 	ui.Row(c.Key("apply")).Gap(4).Children(func() {
 		if ui.Button(c, "填入当前步骤").Disabled(doc.row < 0).Clicked() {

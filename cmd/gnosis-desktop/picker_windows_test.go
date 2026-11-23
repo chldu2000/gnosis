@@ -118,3 +118,63 @@ func TestPickedLocatorSurvivesChangingNewAssertionKind(t *testing.T) {
 		t.Fatalf("unexpected assertion %+v", got)
 	}
 }
+
+func TestPickerResizeKeepsSelectionAndFitsWorkbench(t *testing.T) {
+	app := &desktop{width: 1200}
+	doc := app.addDocument(assetform.New(false))
+	var pixels bytes.Buffer
+	if err := png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 100, 200))); err != nil {
+		t.Fatal(err)
+	}
+	capture := &gnosis.InterfaceCapture{Size: image.Pt(100, 200), Screenshot: pixels.Bytes(), Elements: []gnosis.Element{
+		{Text: "Top", Bounds: image.Rect(0, 0, 100, 100)},
+		{Text: "Bottom", Bounds: image.Rect(0, 100, 100, 200)},
+	}}
+	app.picker = elementPicker{open: true, doc: doc}
+	app.picker.display(capture)
+	view := ui.NewTester(app.view, 1200, 860)
+	start := locate(t, view, "元素选择器")
+	screen := locate(t, view, "设备界面截图")
+	grip := locate(t, view, "调整选择器大小")
+	x, y := grip.X+grip.W/2, grip.Y+grip.H/2
+	view.Press(x, y)
+	view.Move(x+50, y+40)
+	view.Release(x+50, y+40)
+	resized := locate(t, view, "元素选择器")
+	bigger := locate(t, view, "设备界面截图")
+	if resized.W <= start.W || resized.H <= start.H || bigger.H <= screen.H {
+		t.Fatalf("drag did not enlarge dialog and image: %v -> %v, %v -> %v", start, resized, screen, bigger)
+	}
+	view.ClickAt(bigger.X+bigger.W/2, bigger.Y+bigger.H*0.75)
+	click(t, view, "最大化")
+	full := locate(t, view, "元素选择器")
+	if full.W <= resized.W || full.H <= resized.H || app.picker.selected != 1 {
+		t.Fatalf("maximize lost size or selection: %v, %d", full, app.picker.selected)
+	}
+	click(t, view, "还原")
+	if got := locate(t, view, "元素选择器"); got != resized {
+		t.Fatalf("restore: %v, want %v", got, resized)
+	}
+	click(t, view, "关闭")
+	app.picker = elementPicker{open: true, offline: true, doc: doc}
+	app.picker.search = "missing"
+	app.picker.display(capture)
+	view.Frame()
+	if !view.HasText("没有匹配的元素") {
+		t.Fatal("replacing the capture should keep the filter and explain the empty result")
+	}
+	if got := locate(t, view, "元素选择器"); got != resized {
+		t.Fatalf("offline picker reopened at %v, want %v", got, resized)
+	}
+	view.SetSize(760, 540)
+	shrunk := locate(t, view, "元素选择器")
+	if shrunk.X < 0 || shrunk.Y < 0 || shrunk.X+shrunk.W > 760 || shrunk.Y+shrunk.H > 540 {
+		t.Fatalf("picker outside workbench: %v", shrunk)
+	}
+	now := locate(t, view, "设备界面截图")
+	view.ClickAt(now.X+now.W/2, now.Y+now.H/4)
+	click(t, view, "新增点击")
+	if app.picker.open || doc.Rows() != 1 || doc.StepKind(0) != "tap" {
+		t.Fatal("could not apply locator in the smaller workbench")
+	}
+}
