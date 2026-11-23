@@ -165,7 +165,7 @@ func (a *desktop) devicePicker(c *ui.Context) {
 			selected = label
 		}
 	}
-	if ui.Select(c.Key("device-picker"), &selected, options).Label("设备").FillWidth().
+	if ui.Select(c.Key("device-picker"), &selected, options).Label("设备").Tooltip(selected).FillWidth().
 		Disabled(a.refreshing || a.commandBusy || a.deviceError != "").Changed() {
 		for i, option := range options {
 			if option == selected {
@@ -183,8 +183,6 @@ func (a *desktop) devicePicker(c *ui.Context) {
 		ui.Text(c, "重新连接设备后刷新，或选择另一台在线设备。").FontSize(12).Wrap()
 	case !a.refreshing && len(online) == 1:
 		ui.Text(c, "未发现在线设备。连接设备并授权调试后刷新。").FontSize(12).Wrap()
-	case a.deviceID != "":
-		ui.Text(c, "设备标识 · "+a.deviceID).FontSize(12).Wrap().TextColor(theme.TextMuted)
 	}
 }
 
@@ -407,6 +405,13 @@ func (a *desktop) resultsView(c *ui.Context) {
 					if diagnostic := caseDiagnostic(item); diagnostic != "" {
 						ui.Text(c, diagnostic).FontSize(12).Wrap()
 					}
+					if item.FailedStep > 0 && i < len(s.CaseSources) {
+						source := s.CaseSources[i]
+						if source.Path != "" && item.FailedStep <= source.Steps &&
+							ui.Button(c, "查看断言步骤").Clicked() {
+							a.openAssertionStep(source, item.FailedStep)
+						}
+					}
 					if s.Progress.ReportPath == "" && item.ReportPath != "" {
 						action := "打开报告"
 						if item.State == gnosis.ExecutionCancelled {
@@ -420,6 +425,18 @@ func (a *desktop) resultsView(c *ui.Context) {
 			}
 		})
 	})
+}
+
+func (a *desktop) openAssertionStep(source gnosis.CaseSource, step int) {
+	doc := a.loadAsset(source.Path)
+	if doc == nil {
+		return
+	}
+	if !doc.MatchesSavedVersion(source.Digest) || step < 1 || step > doc.Rows() {
+		a.message = "当前文件与本次执行的版本不同。请打开报告查看当时的断言。"
+		return
+	}
+	doc.row, doc.focusRow = step-1, true
 }
 
 func caseDiagnostic(item gnosis.CaseProgress) string {

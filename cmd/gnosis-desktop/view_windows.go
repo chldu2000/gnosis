@@ -14,13 +14,13 @@ const filesBreakpoint = 980
 func (a *desktop) view(c *ui.Context) {
 	wide := a.width >= filesBreakpoint
 	theme := c.Theme()
-	canvas, panel, files := theme.Background, theme.Surface, theme.Surface
-	if !theme.Dark {
-		canvas, panel, files = ui.Hex("#f1f5f8"), ui.Hex("#ffffff"), ui.Hex("#eaf0f5")
-	}
+	canvas, panel := theme.Background, theme.Surface
 	ui.Column(c).Fill().Background(canvas).Children(func() {
 		ui.Row(c.Key("header")).FillWidth().Padding(9, 15).Gap(10).AlignItems(ui.Center).Background(panel).Children(func() {
 			ui.Text(c, "Gnosis").FontSize(23).Bold().Grow(1)
+			if !wide && ui.Button(c.Key("file-picker"), "用例与套件").Clicked() {
+				a.filesOpen = true
+			}
 			ui.Text(c, a.connectionLabel()).FontSize(12).TextColor(theme.TextMuted)
 			if ui.Button(c, "模型设置").Clicked() {
 				a.modelOpen = true
@@ -30,7 +30,7 @@ func (a *desktop) view(c *ui.Context) {
 		ui.Row(c.Key("workbench")).Grow(1).MinHeight(0).FillWidth().AlignItems(ui.Stretch).Gap(12).Padding(10, 12).Children(func() {
 			if wide {
 				ui.Column(c.Key("files")).Width(174).MinHeight(0).Padding(9).Gap(9).
-					Background(files).Border(1, theme.Border).Radius(5).Children(func() {
+					Background(panel).Border(1, theme.Border).Radius(5).Children(func() {
 					a.filesView(c)
 				})
 			}
@@ -65,14 +65,21 @@ func (a *desktop) view(c *ui.Context) {
 	if !a.modelOpen {
 		a.secret = ""
 	}
-	if a.doc != nil && !a.picker.open && !a.filesOpen && !a.modelOpen && c.Shortcut(ui.Ctrl, ui.KeyS) {
-		a.saveAsset(false)
+	if !a.picker.open && !a.filesOpen && !a.modelOpen {
+		switch {
+		case c.Shortcut(ui.Ctrl, ui.KeyO):
+			a.pickAsset()
+		case a.doc != nil && c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyS):
+			a.saveAsset(true)
+		case a.doc != nil && c.Shortcut(ui.Ctrl, ui.KeyS):
+			a.saveAsset(false)
+		}
 	}
 }
 
 func (a *desktop) filesView(c *ui.Context) {
 	ui.Text(c, "用例与套件").FontSize(16).Bold()
-	if ui.Button(c, "打开 YAML").FillWidth().Clicked() {
+	if ui.Button(c, "打开 YAML").FillWidth().Tooltip("Ctrl+O").Clicked() {
 		a.pickAsset()
 	}
 	ui.Row(c).Gap(4).Children(func() {
@@ -84,27 +91,25 @@ func (a *desktop) filesView(c *ui.Context) {
 		}
 	})
 	ui.Scroll(c.Key("opened-files")).Grow(1).MinHeight(0).FillWidth().Children(func() {
-		ui.Column(c).FillWidth().Gap(6).Children(func() {
+		ui.Column(c).Role(ui.RoleListBox).Label("已打开的文件").FillWidth().Gap(4).Children(func() {
 			for _, group := range []struct {
 				label string
 				suite bool
 			}{{"用例", false}, {"套件", true}} {
-				ui.Text(c.Key(group.label), group.label).FontSize(12).TextColor(c.Theme().TextMuted)
+				showHeading := true
 				for _, doc := range a.documents {
 					if group.suite != doc.Suite() {
 						continue
+					}
+					if showHeading {
+						ui.Text(c.Key(group.label), group.label).FontSize(12).TextColor(c.Theme().TextMuted)
+						showHeading = false
 					}
 					title := documentTitle(doc)
 					if doc.Dirty() {
 						title += " · 未保存"
 					}
-					var button ui.Element
-					if doc == a.doc {
-						button = ui.PrimaryButton(c.Key(doc.id), title)
-					} else {
-						button = ui.Button(c.Key(doc.id), title)
-					}
-					if button.FillWidth().Tooltip(doc.Path()).Clicked() {
+					if selectionRow(c.Key(doc.id), title, doc == a.doc).Tooltip(doc.Path()).Clicked() {
 						a.selectDocument(doc)
 					}
 				}
@@ -113,15 +118,33 @@ func (a *desktop) filesView(c *ui.Context) {
 	})
 }
 
+func selectionRow(c *ui.Context, title string, selected bool) ui.Element {
+	t := c.Theme()
+	row := ui.ButtonBase(c).Role(ui.RoleOption).Checked(selected).Label(title).
+		FillWidth().Padding(6, 8).Radius(t.Radius).Justify(ui.Start)
+	switch {
+	case selected:
+		row.Background(t.Selection)
+	case row.Hovered():
+		row.Background(t.SurfaceHover)
+	}
+	row.Children(func() { ui.Text(c, title).SingleLine().Grow(1).MinWidth(0) })
+	return row
+}
+
 func (a *desktop) editorView(c *ui.Context, wide bool, panel ui.Color) {
 	doc := a.doc
-	if !wide {
-		if ui.Button(c.Key("file-picker"), "用例与套件").Clicked() {
-			a.filesOpen = true
-		}
-	}
 	if doc == nil {
-		ui.Text(c, "打开现有用例或套件，或创建一个新文件。").Wrap()
+		ui.Text(c, "开始编写测试").FontSize(23).Bold()
+		ui.Text(c, "打开已有文件，或新建用例来编写第一个步骤。").Wrap()
+		ui.Row(c).Gap(8).Children(func() {
+			if ui.Button(c, "打开文件…").Clicked() {
+				a.pickAsset()
+			}
+			if ui.Button(c, "创建用例").Clicked() {
+				a.newAsset(false)
+			}
+		})
 		a.editorMessage(c)
 		return
 	}
@@ -132,28 +155,31 @@ func (a *desktop) editorView(c *ui.Context, wide bool, panel ui.Color) {
 	} else if doc.Dirty() {
 		label += " · 未保存"
 	}
-	ui.Text(c.Key("document-path"), label).FontSize(12).Wrap().TextColor(c.Theme().TextMuted)
+	ui.Text(c.Key("document-path"), label).FontSize(12).SingleLine().TruncateMiddle().Tooltip(label).TextColor(c.Theme().TextMuted)
 	ui.Row(c.Key("document-actions")).Gap(5).Children(func() {
 		if ui.Button(c, "保存").Tooltip("Ctrl+S").Clicked() {
 			a.saveAsset(false)
 		}
-		if ui.Button(c, "另存为").Clicked() {
-			a.saveAsset(true)
+		if !doc.Suite() && ui.Button(c.Key("pick-live"), "从设备选元素").Clicked() {
+			a.openLivePicker(doc)
 		}
-		if ui.Button(c, "重新载入").Disabled(doc.Path() == "").Clicked() {
-			a.reloadAsset()
-		}
-		if ui.Button(c, "关闭文件").Clicked() {
-			a.closeDocument()
-		}
+		ui.MenuButton(c, "文件操作", func(m *ui.Menu) {
+			if m.Item("另存为…").Chosen() {
+				a.saveAsset(true)
+			}
+			if m.Item("重新载入").Disabled(doc.Path() == "").Chosen() {
+				a.reloadAsset()
+			}
+			m.Separator()
+			if m.Item("关闭文件").Chosen() {
+				a.closeDocument()
+			}
+		})
 	})
 	if a.doc != doc {
 		return
 	}
 	if !doc.Suite() {
-		if ui.Button(c.Key("pick-live"), "从设备选元素").Clicked() {
-			a.openLivePicker(doc)
-		}
 		a.reviewStepView(c, doc)
 	}
 	a.editorMessage(c)
@@ -200,7 +226,14 @@ func (a *desktop) inspector(c *ui.Context) {
 			})
 		}
 		if doc.row < 0 || doc.row >= doc.Rows() {
-			ui.Text(c, "选择列表中的条目查看详情。").FontSize(12).Wrap()
+			hint := "选择列表中的条目查看详情。"
+			if doc.Rows() == 0 {
+				hint = "点击「添加步骤」编写第一步，也可以从设备选择元素。"
+				if doc.Suite() {
+					hint = "点击「添加用例」，按执行顺序加入用例文件。"
+				}
+			}
+			ui.Text(c, hint).FontSize(12).Wrap()
 			return
 		}
 		ui.Divider(c)
@@ -252,19 +285,13 @@ func (a *desktop) editRows(c *ui.Context) {
 	doc.focusRow = false
 	location := a.liveStep()
 	ui.Scroll(c.Key("step-list")).Grow(1).MinHeight(0).Children(func() {
-		ui.Column(c).Gap(5).FillWidth().Children(func() {
+		ui.Column(c).Role(ui.RoleListBox).Label(title).Gap(3).FillWidth().Children(func() {
 			for i := 0; i < doc.Rows(); i++ {
 				text := fmt.Sprintf("%d  %s", i+1, rowTitle(doc, i))
 				if i == location {
 					text += " · 本次执行位置"
 				}
-				var button ui.Element
-				if doc.row == i {
-					button = ui.PrimaryButton(c.Key(i), text)
-				} else {
-					button = ui.Button(c.Key(i), text)
-				}
-				button.FillWidth().Tooltip(text)
+				button := selectionRow(c.Key(i), text, doc.row == i).Tooltip(text)
 				if focus && doc.row == i {
 					button.Focus().ScrollIntoView()
 				}

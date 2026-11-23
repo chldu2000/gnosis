@@ -41,6 +41,51 @@ func click(t *testing.T, view *ui.Tester, label string) {
 	}
 }
 
+func TestWorkbenchOpensAssertionFromResultsWithoutLosingDrafts(t *testing.T) {
+	dir := t.TempDir()
+	a := &desktop{width: 1040, connected: true}
+	contents := "steps:\n  - wait: {duration: 1s}\n  - expect: {screen_text: {text: 欢迎}}\n"
+	target := openFixture(t, a, filepath.Join(dir, "login.yaml"), contents)
+	draft := openFixture(t, a, filepath.Join(dir, "other.yaml"), contents)
+	draft.SetName("另一份草稿")
+	source := gnosis.CaseSource{Path: target.Path(), Digest: sha256.Sum256([]byte(contents)), Steps: 2}
+	a.snapshot = localrun.Snapshot{ID: "done", Suite: true, CaseSources: []gnosis.CaseSource{source, source},
+		Progress: gnosis.ExecutionProgress{State: gnosis.ExecutionFinished, Cases: []gnosis.CaseProgress{
+			{Name: "登录", Result: gnosis.ResultPass},
+			{Name: "登录", Result: gnosis.ResultFail, FailedStep: 2},
+		}}}
+	view := ui.NewTester(a.view, 1040, 740)
+	click(t, view, "查看断言步骤")
+	if a.doc != target || target.row != 1 || !draft.Dirty() {
+		t.Fatal("could not locate the failed assertion while keeping the other draft")
+	}
+	target.SetName("修改后的登录")
+	target.row = 0
+	view.Frame()
+	click(t, view, "查看断言步骤")
+	if target.row != 0 || !target.Dirty() || !view.HasText("当前文件与本次执行的版本不同。请打开报告查看当时的断言。") {
+		t.Fatal("navigating a stale result should preserve the selection and explain the mismatch")
+	}
+}
+
+func TestCompactWorkbenchDocumentActions(t *testing.T) {
+	a := &desktop{width: 760}
+	view := ui.NewTester(a.view, 760, 540)
+	click(t, view, "创建用例")
+	if a.doc == nil || a.doc.Suite() {
+		t.Fatal("empty editor did not create a case")
+	}
+	openFixture(t, a, filepath.Join(t.TempDir(), "case.yaml"), "steps: []\n")
+	view.Frame()
+	click(t, view, "文件操作")
+	if err := view.ChooseMenuItem("关闭文件"); err != nil {
+		t.Fatal(err)
+	}
+	if a.doc == nil || len(a.documents) != 1 || a.doc.Path() != "" {
+		t.Fatal("closing the saved file should return to the original draft")
+	}
+}
+
 func TestWorkbenchKeepsLaunchControlsAboveResults(t *testing.T) {
 	for _, width := range []int{1040, 760} {
 		a := &desktop{width: width, connected: true, deviceID: "fixture", devices: []gnosis.DeviceInfo{
