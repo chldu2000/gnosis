@@ -261,12 +261,12 @@ func TestAndroidAuthoringPilot(t *testing.T) {
 		t.Fatal(offline.problem)
 	}
 	view := ui.NewTester(offline.view, 1040, 740)
-	click(t, view, "查看动作后截图与断言")
-	if !offline.evidenceOpen || offline.evidence == nil || !view.HasText("原用例预期断言") {
+	click(t, view, "复核坐标与截图")
+	click(t, view, "点击后")
+	if offline.picker.afterImage == nil || !view.HasText("原用例预期断言") {
 		t.Fatal("offline review lacks post-action evidence")
 	}
-	click(t, view, "关闭")
-	click(t, view, "复核坐标 · 查看动作前界面")
+	click(t, view, "点击前")
 	if offline.picker.capture == nil {
 		t.Fatalf("missing offline capture: %s", offline.problem)
 	}

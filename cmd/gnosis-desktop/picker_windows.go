@@ -22,6 +22,12 @@ type elementPicker struct {
 	capture                           *gnosis.InterfaceCapture
 	bitmap                            ui.ImageSource
 	selected, candidate               int
+	choices                           []gnosis.LocatorCandidate
+	review                            *gnosis.DraftTurn
+	tap                               *gnosis.TapAt
+	showAfter                         bool
+	afterImage                        ui.ImageSource
+	afterProblem                      string
 }
 
 func (a *desktop) openCaseDraft(report string) {
@@ -64,60 +70,58 @@ func (a *desktop) reviewStepView(c *ui.Context, doc *openedDocument) {
 			continue
 		}
 		ui.Text(c, fmt.Sprintf("原目标 · %s\n第 %d 步，第 %d 轮 · %s", turn.Goal, turn.Step, turn.Turn, turn.Note)).Wrap()
-		if ui.Button(c, "查看动作后截图与断言").Clicked() {
-			data, err := sessionImage(doc.report, turn.AfterImage)
-			if err != nil {
-				a.showError(err)
-				return
-			}
-			bitmap, err := ui.DecodeImage(data)
-			if err != nil {
-				a.showError(err)
-				return
-			}
-			a.evidence, a.evidenceOpen = bitmap, true
+		label := "查看动作后截图与断言"
+		if turn.Coordinate {
+			label = "复核坐标与截图"
 		}
-		ui.Modal(c.Key("turn-evidence"), &a.evidenceOpen, func() {
-			ui.Column(c).Width(min(680, float32(a.width)-40)).Height(480).Gap(8).Padding(12).Children(func() {
-				ui.Text(c, turn.Goal).Bold().Wrap()
-				ui.Row(c).Grow(1).MinHeight(0).FillWidth().Gap(10).Children(func() {
-					ui.Image(c, a.evidence).Width(260).FillHeight()
-					ui.Scroll(c).Grow(1).FillHeight().Children(func() {
-						ui.Column(c).FillWidth().Gap(6).Children(func() {
-							ui.Text(c, turn.Note).Wrap()
-							ui.Text(c, "原用例预期断言").Bold()
-							for _, assertion := range doc.review.Expected {
-								ui.Text(c, assertion).Wrap()
-							}
-						})
-					})
-				})
-				if ui.Button(c, "关闭").Clicked() {
-					a.evidenceOpen = false
-					a.evidence = nil
-				}
-			})
-		})
-		if turn.Coordinate && ui.Button(c, "复核坐标 · 查看动作前界面").Clicked() {
-			if turn.Before == nil {
-				a.showError(errors.New("本轮缺少动作前界面材料"))
-				return
-			}
-			data, err := sessionImage(doc.report, turn.BeforeImage)
-			if err != nil {
-				a.showError(fmt.Errorf("无法读取本轮动作前截图：%w", err))
-				return
-			}
-			capture := *turn.Before
-			capture.Screenshot = data
-			a.picker = elementPicker{open: true, offline: true, doc: doc, selected: -1}
-			a.picker.display(&capture)
+		if ui.Button(c, label).Clicked() {
+			a.openTurnReview(doc, turn)
 		}
 		return
 	}
 }
 
+func (a *desktop) openTurnReview(doc *openedDocument, turn gnosis.DraftTurn) {
+	p := elementPicker{open: true, offline: true, doc: doc, review: &turn, selected: -1, showAfter: !turn.Coordinate}
+	if turn.Coordinate {
+		p.tap = doc.review.RecordedTap(turn.Row)
+		if turn.Before == nil {
+			p.problem = "本轮缺少动作前界面材料"
+		} else if data, err := sessionImage(doc.report, turn.BeforeImage); err != nil {
+			p.problem = fmt.Sprintf("无法读取本轮动作前截图：%v", err)
+		} else {
+			capture := *turn.Before
+			capture.Screenshot = data
+			p.display(&capture)
+		}
+	}
+	data, err := sessionImage(doc.report, turn.AfterImage)
+	if err == nil {
+		p.afterImage, err = ui.DecodeImage(data)
+	}
+	if err != nil {
+		p.afterProblem = fmt.Sprintf("无法读取本轮动作后截图：%v", err)
+	}
+	a.picker = p
+}
+
+func (p *elementPicker) selectNode(index int) {
+	p.selected, p.candidate = index, 0
+	p.choices = p.capture.Candidates(index)
+	for i, choice := range p.choices {
+		if choice.Count == 1 {
+			p.candidate = i
+			break
+		}
+	}
+}
+
+func matchesSearch(e gnosis.Element, filter string) bool {
+	return filter == "" || strings.Contains(strings.ToLower(strings.Join([]string{e.ID, e.Description, e.Text, e.Type}, " ")), filter)
+}
+
 func (p *elementPicker) display(capture *gnosis.InterfaceCapture) {
+	p.choices = nil
 	p.capture, p.bitmap, p.selected, p.candidate = nil, nil, -1, 0
 	if capture.Size.X <= 0 || capture.Size.Y <= 0 {
 		p.problem = "无效的界面尺寸"
@@ -190,7 +194,7 @@ func (a *desktop) pickerView(c *ui.Context) {
 			ui.Row(c).FillWidth().Gap(6).Children(func() {
 				title := "从设备选元素"
 				if p.offline {
-					title = "动作前界面 · 复核定位器"
+					title = "复核 AI 动作"
 				}
 				ui.Text(c, title).Bold().Grow(1)
 				if !p.offline && ui.Button(c, "刷新界面").Disabled(p.busy).Clicked() {
@@ -211,6 +215,23 @@ func (a *desktop) pickerView(c *ui.Context) {
 				ui.Text(c, "正在读取设备界面…")
 				return
 			}
+			if p.review != nil && p.review.Coordinate {
+				ui.Row(c.Key("phase")).Gap(6).Children(func() {
+					if ui.Button(c, "点击前").Disabled(!p.showAfter).Clicked() {
+						p.showAfter = false
+					}
+					if ui.Button(c, "点击后").Disabled(p.showAfter).Clicked() {
+						p.showAfter = true
+					}
+					if !p.showAfter && p.tap != nil && p.bitmap != nil {
+						ui.Text(c, fmt.Sprintf("红圈为原点击位置 · X %.1f%%  Y %.1f%%", p.tap.X*100, p.tap.Y*100)).FontSize(12)
+					}
+				})
+			}
+			if p.showAfter {
+				p.afterView(c, size)
+				return
+			}
 			if p.problem != "" {
 				ui.Text(c, p.problem).Wrap().TextColor(c.Theme().Danger)
 			}
@@ -218,16 +239,17 @@ func (a *desktop) pickerView(c *ui.Context) {
 				return
 			}
 			ui.Row(c.Key("capture")).Grow(1).MinHeight(0).FillWidth().Gap(10).Children(func() {
-				p.screenView(c, size.X*0.46, size.Y-108)
+				scale := p.imageScale(size)
+				p.screenView(c, scale)
 				ui.Column(c.Key("tree")).Grow(1).MinWidth(0).FillHeight().Gap(4).Children(func() {
 					ui.TextInput(c, &p.search).Label("搜索元素").Placeholder("搜索 ID、文本、描述或类型").FillWidth()
+					filter := strings.ToLower(strings.TrimSpace(p.search))
 					ui.Scroll(c.Key("nodes")).FillWidth().Grow(1).MinHeight(0).Children(func() {
 						ui.Column(c).FillWidth().Children(func() {
-							filter := strings.ToLower(strings.TrimSpace(p.search))
 							found := false
 							for i, e := range p.capture.Elements {
 								label := elementLabel(e)
-								if filter != "" && !strings.Contains(strings.ToLower(strings.Join([]string{e.ID, e.Description, e.Text, e.Type}, " ")), filter) {
+								if !matchesSearch(e, filter) {
 									continue
 								}
 								text := strings.Repeat("  ", max(0, min(12, e.Depth))) + label
@@ -242,7 +264,7 @@ func (a *desktop) pickerView(c *ui.Context) {
 									item.ScrollIntoView()
 								}
 								if item.FillWidth().Tooltip(label).Clicked() {
-									p.selected, p.candidate = i, 0
+									p.selectNode(i)
 								}
 							}
 							if !found {
@@ -252,11 +274,23 @@ func (a *desktop) pickerView(c *ui.Context) {
 						})
 					})
 					if p.selected >= 0 {
-						choices := p.capture.Candidates(p.selected)
+						e := p.capture.Elements[p.selected]
+						ui.Text(c, "写入目标 · "+elementLabel(e)).SingleLine().Tooltip(elementLabel(e))
+						if !matchesSearch(e, filter) {
+							ui.Text(c, "当前筛选已隐藏该目标。请选择搜索结果或清除筛选后再写入。").Wrap()
+							if ui.Button(c, "清除筛选").Clicked() {
+								p.search, p.scrollToNode = "", true
+							}
+							return
+						}
+						choices := p.choices
 						ui.Scroll(c.Key("locator-options")).MaxHeight(size.Y * 0.46).FillWidth().Children(func() {
 							ui.Column(c).Gap(4).FillWidth().Children(func() { a.locatorView(c, choices) })
 						})
 						if len(choices) > 0 {
+							if count := choices[p.candidate].Count; count > 1 {
+								ui.Text(c, fmt.Sprintf("匹配 %d 个元素，点击步骤需要唯一定位器或索引。", count)).Wrap()
+							}
 							a.pickerActions(c, choices[p.candidate].Locator)
 						}
 					}
@@ -282,23 +316,69 @@ func elementLabel(e gnosis.Element) string {
 	return "无名称元素"
 }
 
-func (p *elementPicker) screenView(c *ui.Context, width, height float32) {
+// Both phases use the same number of DIPs per device pixel, including after rotation.
+func (p *elementPicker) imageScale(panel ui.Point) float32 {
+	var w, h float32
+	if p.capture != nil {
+		w, h = float32(p.capture.Size.X), float32(p.capture.Size.Y)
+	}
+	if p.afterImage != nil {
+		aw, ah := ui.ImageSize(p.afterImage)
+		w, h = max(w, aw), max(h, ah)
+	}
+	height := panel.Y - 108
+	if p.review != nil && p.review.Coordinate {
+		height -= 42
+	}
+	return min(panel.X*0.46/max(1, w), max(1, height)/max(1, h))
+}
+
+func (p *elementPicker) afterView(c *ui.Context, size ui.Point) {
+	ui.Row(c.Key("after")).FillWidth().Grow(1).MinHeight(0).Gap(10).Children(func() {
+		if p.afterImage != nil {
+			w, h := ui.ImageSize(p.afterImage)
+			scale := p.imageScale(size)
+			ui.Image(c, p.afterImage).Label("动作后截图").Width(w * scale).Height(h * scale).Shrink(0)
+		}
+		ui.Scroll(c).Grow(1).FillHeight().Children(func() {
+			ui.Column(c).Gap(6).FillWidth().Children(func() {
+				if p.afterProblem != "" {
+					ui.Text(c, p.afterProblem).Wrap().TextColor(c.Theme().Danger)
+				}
+				ui.Text(c, p.review.Goal).Bold().Wrap()
+				ui.Text(c, p.review.Note).Wrap()
+				ui.Text(c, "原用例预期断言").Bold()
+				for _, assertion := range p.doc.review.Expected {
+					ui.Text(c, assertion).Wrap()
+				}
+			})
+		})
+	})
+}
+
+func (p *elementPicker) screenView(c *ui.Context, scale float32) {
 	size := p.capture.Size
-	scale := min(width/float32(size.X), max(1, height)/float32(size.Y))
 	w, h := float32(size.X)*scale, float32(size.Y)*scale
 	screen := ui.Image(c.Key("screenshot"), p.bitmap).Label("设备界面截图").Width(w).Height(h).Shrink(0)
-	if p.selected >= 0 {
-		bounds := p.capture.Elements[p.selected].Bounds.Intersect(image.Rectangle{Max: size})
-		if !bounds.Empty() {
-			screen.DrawOver(func(painter *ui.Painter, r ui.Rect) {
+	screen.DrawOver(func(painter *ui.Painter, r ui.Rect) {
+		if p.selected >= 0 {
+			bounds := p.capture.Elements[p.selected].Bounds.Intersect(image.Rectangle{Max: size})
+			if !bounds.Empty() {
 				painter.Stroke(ui.Rect{X: r.X + float32(bounds.Min.X)*scale, Y: r.Y + float32(bounds.Min.Y)*scale, W: float32(bounds.Dx()) * scale, H: float32(bounds.Dy()) * scale}, ui.Hex("#f08426"), 0, 3)
-			})
+			}
 		}
-	}
+		if p.tap != nil {
+			x, y := r.X+r.W*float32(p.tap.X), r.Y+r.H*float32(p.tap.Y)
+			ring := ui.Rect{X: x - 7, Y: y - 7, W: 14, H: 14}
+			painter.Stroke(ring, ui.Hex("#ffffff"), 7, 5)
+			painter.Stroke(ring, ui.Hex("#c02040"), 7, 2)
+			painter.Fill(ui.Rect{X: x - 2, Y: y - 2, W: 4, H: 4}, ui.Hex("#c02040"), 2)
+		}
+	})
 	x, y, over := screen.PointerPosition()
 	if screen.Clicked() && over {
-		p.selected = p.capture.Hit(image.Pt(int(x/scale), int(y/scale)))
-		p.candidate, p.scrollToNode, p.search = 0, true, ""
+		p.selectNode(p.capture.Hit(image.Pt(int(x/scale), int(y/scale))))
+		p.scrollToNode, p.search = true, ""
 	}
 }
 

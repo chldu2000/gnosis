@@ -65,7 +65,7 @@ func (a *desktop) view(c *ui.Context) {
 	if !a.modelOpen {
 		a.secret = ""
 	}
-	if a.doc != nil && !a.picker.open && !a.evidenceOpen && !a.filesOpen && !a.modelOpen && c.Shortcut(ui.Ctrl, ui.KeyS) {
+	if a.doc != nil && !a.picker.open && !a.filesOpen && !a.modelOpen && c.Shortcut(ui.Ctrl, ui.KeyS) {
 		a.saveAsset(false)
 	}
 }

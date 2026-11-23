@@ -39,6 +39,19 @@ type CaseDraft struct {
 	Expected    []string    `json:",omitempty"`
 }
 
+// RecordedTap reads the original action even after the editor has replaced or moved its row.
+func (d *CaseDraft) RecordedTap(row int) *TapAt {
+	var source struct {
+		Steps []struct {
+			Tap *TapAt `yaml:"tap_at"`
+		} `yaml:"steps"`
+	}
+	if row < 0 || yaml.Unmarshal([]byte(d.YAML), &source) != nil || row >= len(source.Steps) {
+		return nil
+	}
+	return source.Steps[row].Tap
+}
+
 func buildDraft(source DraftSource, record *RunRecord, attachments *caseAttachments, view reportCase) (*CaseDraft, error) {
 	refuse := func(reason string) (*CaseDraft, error) { return &CaseDraft{Unavailable: reason}, nil }
 	if record.Result != ResultPass || (record.State != "" && record.State != ExecutionFinished) {

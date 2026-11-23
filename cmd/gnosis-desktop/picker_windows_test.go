@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,15 +27,25 @@ func TestOfflineReviewWithMissingBeforeImage(t *testing.T) {
 	}
 	open := app.addDocument(doc)
 	open.review, open.report = source, filepath.Join(t.TempDir(), "report.html")
+	var pixels bytes.Buffer
+	if err := png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	source.Turns[0].AfterImage = "after.png"
+	if err := os.WriteFile(filepath.Join(filepath.Dir(open.report), "after.png"), pixels.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(open.report, []byte("original report"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	uiTest := ui.NewTester(app.view, 1040, 740)
-	click(t, uiTest, "复核坐标 · 查看动作前界面")
+	click(t, uiTest, "复核坐标与截图")
 	data, err := os.ReadFile(open.report)
-	if !strings.Contains(app.problem, "动作前截图") || app.picker.open || err != nil || string(data) != "original report" || open.StepKind(0) != "tap_at" {
-		t.Fatalf("missing image: %q, %q, %v", app.problem, data, err)
+	if !strings.Contains(app.picker.problem, "动作前截图") || !app.picker.open || err != nil || string(data) != "original report" || open.StepKind(0) != "tap_at" {
+		t.Fatalf("missing image: %q, %q, %v", app.picker.problem, data, err)
 	}
+	click(t, uiTest, "点击后")
+	locate(t, uiTest, "动作后截图")
 }
 
 func TestPickerEditsWithoutDispatchAndKeepsExpectedValue(t *testing.T) {
@@ -70,9 +81,24 @@ func TestPickerEditsWithoutDispatchAndKeepsExpectedValue(t *testing.T) {
 	if app.picker.selected != 2 {
 		t.Fatalf("screenshot selected element %d, want Messages", app.picker.selected)
 	}
+	if choice := app.picker.choices[app.picker.candidate]; choice.Count != 1 || choice.Locator.Text == nil || *choice.Locator.Text != "Messages" {
+		t.Fatal("screenshot selection defaulted to the duplicate ID")
+	}
+	click(t, view, "搜索元素")
+	view.Type("Mail")
+	if !view.HasText("写入目标 · Messages") || view.HasText("新增点击") || view.HasText("填入当前步骤") || view.HasText("新增断言") {
+		t.Fatal("filtered-out target can still be written")
+	}
 	click(t, view, "  Mail")
+	if !view.HasText("写入目标 · Mail") || app.picker.choices[app.picker.candidate].Count != 1 {
+		t.Fatal("tree selection did not choose a unique locator for Mail")
+	}
 	if !view.HasText("ID=switch · 2 个匹配") {
 		t.Fatalf("missing duplicate indicator: %v", view.Texts())
+	}
+	click(t, view, "ID=switch · 2 个匹配")
+	if !view.HasText("匹配 2 个元素，点击步骤需要唯一定位器或索引。") {
+		t.Fatal("ambiguous candidate has no warning")
 	}
 	click(t, view, "ID=switch · 文本=Mail · 1 个匹配")
 	click(t, view, "填入当前步骤")
@@ -87,6 +113,57 @@ func TestPickerEditsWithoutDispatchAndKeepsExpectedValue(t *testing.T) {
 	got := c.Steps[0].Expect.AttrEquals
 	if !got.Value || got.Attribute != "checked" || *got.Locator.ID != "switch" || *got.Locator.Text != "Mail" || off {
 		t.Fatalf("unexpected assertion %+v", got)
+	}
+}
+
+func TestReviewSwitchesScreensAtSameScaleAndKeepsOriginalTap(t *testing.T) {
+	app := &desktop{width: 1040}
+	dir := t.TempDir()
+	before, after := image.Pt(100, 200), image.Pt(200, 100)
+	for file, size := range map[string]image.Point{"before.png": before, "after.png": after} {
+		var out bytes.Buffer
+		if err := png.Encode(&out, image.NewRGBA(image.Rectangle{Max: size})); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, file), out.Bytes(), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	draft := &gnosis.CaseDraft{YAML: "steps: [{tap_at: {x: 0.25, y: 0.6}}]", Expected: []string{"Amber detail"},
+		Turns: []gnosis.DraftTurn{{Row: 0, Coordinate: true, Before: &gnosis.InterfaceCapture{Size: before, Elements: []gnosis.Element{{Text: "Amber", Bounds: image.Rectangle{Max: before}}}}, BeforeImage: "before.png", AfterImage: "after.png"}},
+	}
+	form, err := assetform.FromDraft(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := app.addDocument(form)
+	doc.review, doc.report = draft, filepath.Join(dir, "report.html")
+	view := ui.NewTester(app.view, 1040, 740)
+	click(t, view, "复核坐标与截图")
+	click(t, view, "最大化")
+	screen := locate(t, view, "设备界面截图")
+	x, y := screen.X+screen.W*.25, screen.Y+screen.H*.6
+	pixel := view.Image().RGBAAt(int(x), int(y))
+	if pixel.R < 150 || pixel.G > 90 || pixel.B > 140 {
+		t.Fatalf("expected original tap marker, got %v", pixel)
+	}
+	view.ClickAt(x, y)
+	click(t, view, "点击后")
+	result := locate(t, view, "动作后截图")
+	if math.Abs(float64(result.W-screen.H)) > 0.01 || math.Abs(float64(result.H-screen.W)) > 0.01 || !view.HasText("Amber detail") || view.HasText("填入当前步骤") {
+		t.Fatalf("review switched scale or exposed write actions: %v -> %v", screen, result)
+	}
+	click(t, view, "点击前")
+	if !view.HasText("写入目标 · Amber") || screen != locate(t, view, "设备界面截图") {
+		t.Fatal("selection or scale lost switching back")
+	}
+	click(t, view, "填入当前步骤")
+	if doc.StepKind(0) != "tap" {
+		t.Fatal("coordinate was not replaced")
+	}
+	click(t, view, "复核坐标与截图")
+	if app.picker.tap == nil || app.picker.tap.X != .25 || app.picker.tap.Y != .6 {
+		t.Fatal("draft edit changed the original click evidence")
 	}
 }
 

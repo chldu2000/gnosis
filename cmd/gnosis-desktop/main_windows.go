@@ -25,8 +25,6 @@ type desktop struct {
 	pickerSize     ui.Point
 	pickerExpanded bool
 	captureEpoch   uint64
-	evidenceOpen   bool
-	evidence       ui.ImageSource
 	window         *mygo.Window
 	client         *localrun.Client
 	ctx            context.Context
