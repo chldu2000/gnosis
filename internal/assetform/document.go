@@ -25,12 +25,80 @@ import (
 var ErrChangedOnDisk = errors.New("the file changed on disk after it was opened")
 
 type Document struct {
-	path     string
-	root     *yaml.Node
-	original []byte
-	digest   [sha256.Size]byte
-	dirty    bool
-	suite    bool
+	path      string
+	root      *yaml.Node
+	original  []byte
+	digest    [sha256.Size]byte
+	dirty     bool
+	suite     bool
+	draftRows map[*yaml.Node]int
+}
+
+func FromDraft(draft *gnosis.CaseDraft) (*Document, error) {
+	if err := gnosis.ValidateAsset("draft.yaml", []byte(draft.YAML)); err != nil {
+		return nil, err
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(draft.YAML), &root); err != nil {
+		return nil, err
+	}
+	d := &Document{root: &root, dirty: true, draftRows: make(map[*yaml.Node]int)}
+	for i, row := range d.rows() {
+		d.draftRows[row] = i
+	}
+	return d, nil
+}
+
+// DraftRow keeps review evidence associated with its original step after edits.
+func (d *Document) DraftRow(i int) (int, bool) {
+	if i < 0 || i >= d.Rows() {
+		return 0, false
+	}
+	v, ok := d.draftRows[d.rows()[i]]
+	return v, ok
+}
+
+// ApplyLocator preserves other parameters (including the author's expected value).
+func (d *Document) ApplyLocator(i int, l gnosis.Locator) error {
+	if i < 0 || i >= d.Rows() || d.Suite() {
+		return errors.New("请先选择一个用例步骤")
+	}
+	kind := d.StepKind(i)
+	row := d.rows()[i]
+	var node *yaml.Node
+	key := "locator"
+	switch kind {
+	case "tap", "long_press":
+		node = ensureMapping(row, kind)
+	case "expect", "precondition":
+		check := d.CheckKind(i)
+		node = child(row, kind)
+		switch check {
+		case "exists", "absent":
+			key = check
+		case "attr_equals", "text_equals", "text_contains":
+			node = ensureMapping(node, check)
+		default:
+			return errors.New("此断言没有定位器")
+		}
+	default:
+		return errors.New("此步骤没有定位器")
+	}
+	target := mapping()
+	for _, item := range []struct {
+		k string
+		v *string
+	}{{"id", l.ID}, {"text", l.Text}, {"description", l.Description}, {"type", l.Type}} {
+		if item.v != nil {
+			setScalar(target, item.k, "!!str", *item.v)
+		}
+	}
+	if l.Index > 0 {
+		setScalar(target, "index", "!!int", strconv.Itoa(l.Index))
+	}
+	set(node, key, target)
+	d.dirty = true
+	return nil
 }
 
 func Open(path string) (*Document, error) {
@@ -200,14 +268,27 @@ func (d *Document) CheckKind(i int) string {
 }
 
 func (d *Document) SetCheckKind(i int, kind string) {
-	if d.CheckKind(i) == kind {
+	current := d.CheckKind(i)
+	if current == kind {
 		return
 	}
 	assertion := ensureMapping(d.rows()[i], d.StepKind(i))
+	locator := child(assertion, current)
+	if current != "exists" && current != "absent" {
+		locator = child(locator, "locator")
+	}
 	for _, prior := range CheckKinds {
 		remove(assertion, prior)
 	}
-	set(assertion, kind, mapping())
+	check := mapping()
+	if locator != nil && kind != "screen_text" {
+		if kind == "exists" || kind == "absent" {
+			check = locator
+		} else {
+			set(check, "locator", locator)
+		}
+	}
+	set(assertion, kind, check)
 	d.dirty = true
 }
 
@@ -291,7 +372,11 @@ func (d *Document) Save(destination string) error {
 			return err
 		}
 	}
-	if err := fileio.Replace(destination, data); err != nil {
+	write := fileio.Replace
+	if d.draftRows != nil && d.path == "" {
+		write = fileio.Create
+	}
+	if err := write(destination, data); err != nil {
 		return err
 	}
 	d.root, d.path, d.original, d.dirty = root, destination, data, false

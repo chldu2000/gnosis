@@ -164,9 +164,20 @@ func (r *Rejection) Error() string {
 type loadSettings struct {
 	reportDirectory string
 	caseSources     *[]CaseSource
+	draftSource     *DraftSource
 }
 
 type LoadOption func(*loadSettings)
+
+// DraftSource keeps the exact bytes loaded for a standalone authoring trial.
+type DraftSource struct {
+	path string
+	data []byte
+}
+
+func WithDraftSource(destination *DraftSource) LoadOption {
+	return func(settings *loadSettings) { settings.draftSource = destination }
+}
 
 // CaseSource identifies the exact file and version loaded for a case.
 type CaseSource struct {
@@ -199,6 +210,9 @@ func Load(path string, options ...LoadOption) (Case, *Suite, error) {
 		option(&settings)
 	}
 	destination := settings.caseSources
+	if settings.draftSource != nil {
+		*settings.draftSource = DraftSource{}
+	}
 	var sources []CaseSource
 	if destination != nil {
 		settings.caseSources = &sources
@@ -208,6 +222,9 @@ func Load(path string, options ...LoadOption) (Case, *Suite, error) {
 		return Case{}, nil, &Rejection{File: path, Line: 0, Column: 0, Reason: "cannot read file"}
 	}
 	loaded, suite, err := loadData(path, data, settings)
+	if err == nil && suite == nil && settings.draftSource != nil {
+		*settings.draftSource = DraftSource{path: path, data: data}
+	}
 	if err == nil && destination != nil {
 		*destination = sources
 	}

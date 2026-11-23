@@ -127,6 +127,15 @@ func serveUntilIdle(listener net.Listener, manager *Manager) error {
 
 func endpoints(manager *Manager) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /capture", func(w http.ResponseWriter, r *http.Request) {
+		device, err := manager.config.OpenDevice(r.URL.Query().Get("device"))
+		if err != nil {
+			writeResponse(w, nil, err)
+			return
+		}
+		capture, err := gnosis.InspectDevice(r.Context(), device)
+		writeResponse(w, capture, err)
+	})
 	mux.HandleFunc("GET /execution", func(w http.ResponseWriter, r *http.Request) {
 		response, err := manager.Get(r.URL.Query().Get("id"), r.URL.Query().Get("request"))
 		writeResponse(w, response, err)
@@ -269,6 +278,12 @@ func (c *Client) Devices(ctx context.Context) ([]gnosis.DeviceInfo, error) {
 	var result []gnosis.DeviceInfo
 	err := c.call(ctx, http.MethodGet, "/devices", nil, &result)
 	return result, err
+}
+
+func (c *Client) Capture(ctx context.Context, device string) (*gnosis.InterfaceCapture, error) {
+	var result gnosis.InterfaceCapture
+	err := c.call(ctx, http.MethodGet, "/capture?"+url.Values{"device": {device}}.Encode(), nil, &result)
+	return &result, err
 }
 
 func (c *Client) Start(ctx context.Context, request StartRequest) (Snapshot, error) {

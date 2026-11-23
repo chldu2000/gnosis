@@ -50,6 +50,7 @@ func (a *desktop) view(c *ui.Context) {
 				}
 			})
 		})
+		a.pickerView(c)
 		ui.Modal(c.Key("model-dialog"), &a.modelOpen, func() {
 			ui.Column(c).Width(460).Padding(14).Gap(8).Children(func() {
 				ui.Text(c, "模型设置").FontSize(18).Bold()
@@ -64,7 +65,7 @@ func (a *desktop) view(c *ui.Context) {
 	if !a.modelOpen {
 		a.secret = ""
 	}
-	if a.doc != nil && !a.filesOpen && !a.modelOpen && c.Shortcut(ui.Ctrl, ui.KeyS) {
+	if a.doc != nil && !a.picker.open && !a.evidenceOpen && !a.filesOpen && !a.modelOpen && c.Shortcut(ui.Ctrl, ui.KeyS) {
 		a.saveAsset(false)
 	}
 }
@@ -148,6 +149,12 @@ func (a *desktop) editorView(c *ui.Context, wide bool, panel ui.Color) {
 	})
 	if a.doc != doc {
 		return
+	}
+	if !doc.Suite() {
+		if ui.Button(c.Key("pick-live"), "从设备选元素").Clicked() {
+			a.openLivePicker(doc)
+		}
+		a.reviewStepView(c, doc)
 	}
 	a.editorMessage(c)
 	theme := c.Theme()

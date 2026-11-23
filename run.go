@@ -9,6 +9,8 @@ import (
 	"math"
 	"sync"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Device provides the operations available to a loaded case.
@@ -40,6 +42,8 @@ type Element struct {
 	ID, Text, Description, Type string
 	Bounds                      image.Rectangle
 	Enabled, Checked            *bool
+	// Depth is zero for a root element in the platform's preorder traversal.
+	Depth int
 }
 
 // TextRegion is a string recognized from the pixels of a screenshot.
@@ -96,6 +100,8 @@ type TrajectoryTurn struct {
 	Action     Step
 	Note       string
 	Screenshot []byte
+	row        *yaml.Node
+	before     *InterfaceCapture
 }
 
 var (
@@ -108,6 +114,7 @@ var (
 type RunOption func(*runSettings)
 
 type runSettings struct {
+	draftSource     *DraftSource
 	model           ModelConfig
 	reportDirectory string
 	reportInput     string

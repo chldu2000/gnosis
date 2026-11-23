@@ -16,7 +16,7 @@ This phase is the foundation for CLI and desktop; later phases consume the loade
 
 Go adb protocol + uiautomator2 for control tree, gestures, type, launch, screenshots. Install and keep uiautomator2. Run action and assertion steps on one Android device: polling timeouts, locator resolve (tree then OCR backup), result stop rules, end-of-step screenshots into a run record. ONNX PP-OCR for screen-text assertions and locator backup. Still no AI loop and no suite orchestration beyond what load already returns.
 
-HarmonyOS NEXT device adapter can follow in the same phase or immediately after Android when the shared device-operation surface is stable; both platforms must share the same operation and locator shapes from design.
+The [HarmonyOS NEXT device adapter spec and implementation issues](../.scratch/harmonyos-next-device/spec.md) cover the remaining device platform. The adapter can follow in this phase or immediately after Android once the shared device-operation surface is stable. Both platforms use the operation and locator shapes from the design.
 
 ## 3. AI steps
 
@@ -38,11 +38,15 @@ Native MyGo UI (`mygo_nowebview`): edit cases and suites via forms, pick a devic
 
 ## After the first release · Connect Gnosis instances to cloud dispatch
 
+[Instance integration spec and implementation issues](../.scratch/cloud-instance-connection/spec.md)
+
 Add the instance side in this repository after local execution control is verified. It connects to the cloud, advertises available devices, validates task packages, applies control commands, and reports execution progress. A separate project implements the cloud scheduler, task storage, and operator interface. See [Execution control and cloud integration](execution-control.md) for the shared contract.
 
 ## After the first release · AI-assisted case authoring
 
-**Feature dir:** `.scratch/ai-assisted-case-authoring/` (create when starting)
+[AI-assisted case authoring spec and implementation issues](../.scratch/ai-assisted-case-authoring/spec.md)
+
+The CLI and Windows workbench now support trial, review, and Save As. The Android pilot verified independent model-free replay and a known failing assertion. Human authoring time remains to be measured. See the [CLI workflow](cli-execution.md#从-ai-试跑生成回归用例) and [pilot results](../.scratch/ai-assisted-case-authoring/issues/02-verify-android-rerun.md).
 
 This milestone can proceed independently of cloud dispatch and macOS desktop work. Start with shared Go logic and the CLI, then add the workflow to the Windows workbench.
 
@@ -54,7 +58,9 @@ For the pilot, compare manual and AI-assisted authoring on the same Android scen
 
 ## After the first release · Visual element selection
 
-**Feature dir:** `.scratch/visual-element-selection/` (create when starting)
+[Visual element selection spec and implementation issues](../.scratch/visual-element-selection/spec.md)
+
+The Windows workbench supports live Android selection and offline coordinate review. The Android pilot verified replay after moving the selected product to another row. See the [workbench workflow](desktop-execution.md#在设备界面上选元素).
 
 Deliver manual element selection for Android devices in the Windows workbench as an independent milestone. An author can use it with a new case before configuring a model or running an AI step. CLI draft generation can ship independently. Both editing workflows share the screenshot, hierarchical control tree with element bounds, screen dimensions, locator matching logic and existing step form.
 

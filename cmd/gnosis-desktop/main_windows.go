@@ -21,11 +21,15 @@ import (
 const windowTitle = "Gnosis"
 
 type desktop struct {
-	window *mygo.Window
-	client *localrun.Client
-	ctx    context.Context
-	width  int
-	retry  chan struct{}
+	picker       elementPicker
+	captureEpoch uint64
+	evidenceOpen bool
+	evidence     ui.ImageSource
+	window       *mygo.Window
+	client       *localrun.Client
+	ctx          context.Context
+	width        int
+	retry        chan struct{}
 
 	doc       *openedDocument
 	documents []*openedDocument

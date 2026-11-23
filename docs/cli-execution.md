@@ -35,6 +35,18 @@ CGO_ENABLED=0 go build -o ./gnosis ./cmd/gnosis
 
 Go 调用方可对 `Run` 或 `RunSuite` 传入 `WithReports(directory)` 保存报告。从任意已保存的 `RunRecord.ReportPath` 取得本次执行的同一报告路径。载入时可传入 `ReportsOutsideCaseTree(directory)` 检查输出目录与输入目录是否分开。
 
+## 从 AI 试跑生成回归用例
+
+执行普通回归前，可先从一次通过的 AI 试跑生成固定步骤。
+
+```powershell
+.\gnosis.exe --device SERIAL --draft .\cases\trial.yaml
+```
+
+`--draft` 接受单个用例。用例须包含预期断言且结果为 `pass`，每个 AI 步骤都须实际执行至少一个动作。终端按来源步骤和轮次列出目标、说明和拟保存的 YAML，并标出坐标点击。对照会话报告里的动作后截图确认路径，再输入一个新的 YAML 路径。直接回车可结束复核。程序保留执行开始时载入的普通步骤和断言，已有文件会受到覆盖保护。
+
+将应用恢复到原起始状态后，用普通 CLI 命令执行新 YAML，例如 `.\gnosis.exe --device SERIAL .\cases\regression.yaml`。生成的步骤可在没有模型配置的环境执行。再准备一个能完成相同动作、但详情错误的场景，检查报告是否在原预期断言处失败。
+
 ## 在 CI 中安排回归
 
 可以按反馈时限组织套件。合并请求运行覆盖关键路径的短套件，夜间或发版前再扩大用例、设备和语言覆盖。为每次执行准备对应的应用构建、账号、权限和测试数据，用前置断言确认起始界面。例如搜索用例从首页开始，测试环境中应有指定商品。前置断言只检查状态，账号登录和商品数据需要提前准备。 [Android 测试策略](https://developer.android.com/training/testing/fundamentals/strategies) · [Duolingo 的发布测试实践](https://blog.duolingo.com/birds-eye-a-powerful-tool-for-exploring-app-screenshots/)

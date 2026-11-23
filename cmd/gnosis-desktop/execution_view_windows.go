@@ -365,6 +365,11 @@ func (a *desktop) executionControls(c *ui.Context) {
 func (a *desktop) resultsView(c *ui.Context) {
 	s := a.snapshot
 	ui.Text(c.Key("heading"), "用例结果").Bold()
+	if !s.Suite && !s.Active() && s.Progress.State == gnosis.ExecutionFinished && s.Progress.ReportPath != "" {
+		if ui.Button(c, "复核用例草稿").Clicked() {
+			a.openCaseDraft(s.Progress.ReportPath)
+		}
+	}
 	ui.Scroll(c.Key("list")).Grow(1).MinHeight(0).FillWidth().Children(func() {
 		ui.Column(c).FillWidth().Gap(6).Children(func() {
 			for i := 0; i < max(len(s.Progress.Cases), len(s.CaseSources)); i++ {

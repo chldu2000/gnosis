@@ -337,18 +337,22 @@ func (d *AndroidDevice) ControlTree() ([]Element, error) {
 		return nil, err
 	}
 	var elements []Element
-	visitAndroidNodes(nodes, func(node androidNode) bool {
-		e := Element{
-			ID: node.ID, Text: node.Text, Description: node.Description, Type: node.Class,
-			Enabled: node.Enabled, Checked: node.Checked,
+	var collect func([]androidNode, int)
+	collect = func(nodes []androidNode, depth int) {
+		for _, node := range nodes {
+			e := Element{
+				ID: node.ID, Text: node.Text, Description: node.Description, Type: node.Class,
+				Enabled: node.Enabled, Checked: node.Checked, Depth: depth,
+			}
+			var minX, minY, maxX, maxY int
+			if n, _ := fmt.Sscanf(node.Bounds, "[%d,%d][%d,%d]", &minX, &minY, &maxX, &maxY); n == 4 {
+				e.Bounds = image.Rectangle{Min: image.Pt(minX, minY), Max: image.Pt(maxX, maxY)}
+			}
+			elements = append(elements, e)
+			collect(node.Children, depth+1)
 		}
-		var minX, minY, maxX, maxY int
-		if n, _ := fmt.Sscanf(node.Bounds, "[%d,%d][%d,%d]", &minX, &minY, &maxX, &maxY); n == 4 {
-			e.Bounds = image.Rectangle{Min: image.Pt(minX, minY), Max: image.Pt(maxX, maxY)}
-		}
-		elements = append(elements, e)
-		return false
-	})
+	}
+	collect(nodes, 0)
 	return elements, nil
 }
 

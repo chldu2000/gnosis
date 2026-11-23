@@ -69,6 +69,12 @@ func (r *caseRun) runAI(step AI, observation *frame) ([]TrajectoryTurn, *frame, 
 		// Locator fallback should inspect the device at dispatch time. The
 		// model's earlier screenshot can be stale after waiting for its reply.
 		actionFrame := &frame{device: r.device}
+		var before *InterfaceCapture
+		if r.settings.draftSource != nil && choice.action.TapAt != nil {
+			// The model's earlier observation may predate a screen transition.
+			// A missing review attachment does not change the action's outcome.
+			before, _ = observeInterface(r.device)
+		}
 		dispatched, actionErr := r.action(choice.action, actionFrame)
 		if !dispatched {
 			if actionFrame.taken {
@@ -82,9 +88,12 @@ func (r *caseRun) runAI(step AI, observation *frame) ([]TrajectoryTurn, *frame, 
 		if control.Context().Err() == nil {
 			endScreenshot, captureErr = observation.screenshot()
 		}
-		trajectory = append(trajectory, TrajectoryTurn{
-			Action: choice.action, Note: choice.note, Screenshot: endScreenshot,
-		})
+		turn := TrajectoryTurn{Action: choice.action, Note: choice.note, Screenshot: endScreenshot}
+		if r.settings.draftSource != nil {
+			turn.row = choice.row
+			turn.before = before
+		}
+		trajectory = append(trajectory, turn)
 		control.mark(func(progress *ExecutionProgress) { progress.Turn = len(trajectory) })
 		if actionErr != nil {
 			return trajectory, observation, actionErr

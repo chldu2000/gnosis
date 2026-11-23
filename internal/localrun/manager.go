@@ -121,7 +121,8 @@ func (m *Manager) Start(request StartRequest) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	var sources []gnosis.CaseSource
-	testCase, suite, err := gnosis.Load(path, gnosis.ReportsOutsideCaseTree(m.config.ReportDir), gnosis.WithCaseSources(&sources))
+	var draftSource gnosis.DraftSource
+	testCase, suite, err := gnosis.Load(path, gnosis.ReportsOutsideCaseTree(m.config.ReportDir), gnosis.WithCaseSources(&sources), gnosis.WithDraftSource(&draftSource))
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -152,7 +153,7 @@ func (m *Manager) Start(request StartRequest) (Snapshot, error) {
 			accepted = true
 			started <- response{snapshot: initial}
 			return nil
-		}, gnosis.WithReports(m.config.ReportDir), gnosis.WithReportSource(path, sources), gnosis.WithModel(model), gnosis.WithProgressPersistence(func(progress gnosis.ExecutionProgress) error {
+		}, gnosis.WithReports(m.config.ReportDir), gnosis.WithReportSource(path, sources), gnosis.WithCaseDraft(draftSource), gnosis.WithModel(model), gnosis.WithProgressPersistence(func(progress gnosis.ExecutionProgress) error {
 			current := initial
 			current.Progress = progress
 			return m.save(current)

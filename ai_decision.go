@@ -13,6 +13,7 @@ import (
 type modelDecision struct {
 	stop   bool
 	action Step
+	row    *yaml.Node
 	note   string
 }
 
@@ -66,14 +67,15 @@ func decodeModelDecision(content, secret string) (modelDecision, error) {
 
 	// Feed the validated object to the same action decoder as a case file.
 	// Its raw errors may quote model inputs, so report only the safe category.
-	step, err := decodeStep("", &yaml.Node{
+	row := &yaml.Node{
 		Kind:    yaml.MappingNode,
 		Content: []*yaml.Node{action, params},
-	})
+	}
+	step, err := decodeStep("", row)
 	if err != nil {
 		return modelDecision{}, errors.New("AI model returned invalid action parameters")
 	}
-	return modelDecision{action: step, note: note.Value}, nil
+	return modelDecision{action: step, row: row, note: note.Value}, nil
 }
 
 // readDecisionNode keeps exact JSON scalar types when passing the decision

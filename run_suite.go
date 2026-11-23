@@ -21,6 +21,7 @@ func RunSuite(suite Suite, device Device, clock Clock, options ...RunOption) ([]
 	defer release()
 
 	settings := runConfiguration(options)
+	settings.draftSource = nil
 	settings.report = newSessionReport(settings, suite.Cases, true)
 	records, err := runSuiteCases(suite.Cases, device, clock, settings)
 	return records, settings.finishReport(ExecutionFinished, err)
@@ -34,6 +35,9 @@ func RunControlled(testCase Case, suite *Suite, device Device, clock Clock, cont
 		return errors.New("execution control is required")
 	}
 	settings := runConfiguration(options)
+	if suite != nil {
+		settings.draftSource = nil
+	}
 	settings.control = control
 	defer func() { control.finish(safeRunError(err, settings.model.APIKey)) }()
 	if suite != nil && len(suite.Cases) == 0 {

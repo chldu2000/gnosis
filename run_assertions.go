@@ -117,13 +117,7 @@ func locate(locator Locator, observation *frame, allowScreenText bool) ([]Elemen
 	if err != nil {
 		return nil, fmt.Errorf("read control tree: %w", err)
 	}
-	var matches []Element
-	for _, e := range tree {
-		if matchesField(locator.ID, e.ID) && matchesField(locator.Text, e.Text) &&
-			matchesField(locator.Description, e.Description) && matchesField(locator.Type, e.Type) {
-			matches = append(matches, e)
-		}
-	}
+	matches := matchTree(locator, tree)
 	if len(matches) == 0 && allowScreenText && locator.Text != nil &&
 		locator.ID == nil && locator.Description == nil && locator.Type == nil {
 		regions, err := observation.screenText()

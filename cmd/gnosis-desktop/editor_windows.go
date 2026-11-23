@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo"
+	"gnosis"
 	"gnosis/internal/assetform"
 	"gnosis/internal/localrun"
 )
@@ -19,6 +20,8 @@ type openedDocument struct {
 	id       int
 	row      int
 	focusRow bool
+	review   *gnosis.CaseDraft
+	report   string
 }
 
 func documentTitle(doc *openedDocument) string {

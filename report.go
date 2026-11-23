@@ -101,6 +101,7 @@ func resolveReportPath(path string) string {
 }
 
 type sessionReport struct {
+	source             *DraftSource
 	root, path, secret string
 	view               reportView
 	published          bool
@@ -152,6 +153,9 @@ func newSessionReport(settings runSettings, cases []Case, suite bool) *sessionRe
 		return nil
 	}
 	report := &sessionReport{root: settings.reportDirectory, secret: settings.model.APIKey}
+	if !suite {
+		report.source = settings.draftSource
+	}
 	view := &report.view
 	view.Suite = suite
 	input := ""
@@ -244,6 +248,16 @@ func (r *sessionReport) appendCase(index int, record *RunRecord) (_ string, err 
 	if err := r.publish(); err != nil {
 		return "", err
 	}
+	if r.source != nil {
+		// Draft material is optional. A failed attachment must not discard the report.
+		files := caseAttachments{directory: directory, index: index}
+		if draftErr := r.writeDraft(record, item, &files); draftErr != nil {
+			for _, path := range files.written {
+				_ = os.Remove(path)
+			}
+			_ = saveDraft(directory, &CaseDraft{Unavailable: r.text(draftErr.Error())})
+		}
+	}
 	return r.path, nil
 }
 
@@ -332,6 +346,10 @@ type caseAttachments struct {
 }
 
 func (a *caseAttachments) save(step, turn int, data []byte) (string, error) {
+	return a.saveFrame(step, turn, "", data)
+}
+
+func (a *caseAttachments) saveFrame(step, turn int, suffix string, data []byte) (string, error) {
 	extension := ""
 	switch http.DetectContentType(data) {
 	case "image/png":
@@ -349,7 +367,7 @@ func (a *caseAttachments) save(step, turn int, data []byte) (string, error) {
 	if turn > 0 {
 		name += fmt.Sprintf("-turn-%04d", turn)
 	}
-	name += extension
+	name += suffix + extension
 	path := filepath.Join(a.directory, filepath.FromSlash(name))
 	if len(a.written) == 0 {
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
