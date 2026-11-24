@@ -2,6 +2,8 @@
 
 本文档整理 Gnosis 在编写和执行 Android UI 自动化用例时遇到的表达能力缺口及改进方向。
 
+后续实现已支持基于参照元素的容器内及方向定位，下文保留提出问题时的场景。当前仍存在的缺口、MyGo 工作台交互和逐项验收见[Android 用例改进问题单](../.scratch/android-case-reliability/spec.md)。
+
 优先级排序以**实际编写用例时最容易受阻的高频场景**为主，同时保持与 [`docs/design.md`](design.md) 和 [`GLOSSARY.md`](../GLOSSARY.md) 的一致：
 
 - Android 与 HarmonyOS NEXT 共用同一套用例文件格式、定位器和设备操作语义；
